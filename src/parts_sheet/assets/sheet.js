@@ -9,6 +9,9 @@ let config,
   pendingKey = null;
 let pendingPayload = null,
   syncPending = false;
+let uncertain = false,
+  loading = false,
+  loadVersion = 0;
 const dirty = new Map();
 const fields = [
   "name",
@@ -56,14 +59,21 @@ async function request(url, data, method = "POST") {
     }
   }
   const response = await fetch(url, options);
-  const body = await response
-    .json()
-    .catch(() => ({
-      error:
-        "The server returned an unexpected response. Check your login and retry.",
-    }));
-  if (!response.ok)
-    throw new Error(body.error || body.detail || JSON.stringify(body));
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    const error = new Error(
+      "The server returned an unexpected response. Check your login and retry.",
+    );
+    error.status = response.redirected ? 401 : 500;
+    throw error;
+  }
+  if (!response.ok) {
+    const error = new Error(body.error || body.detail || JSON.stringify(body));
+    error.status = response.status;
+    throw error;
+  }
   return body;
 }
 const api = (action, data) => request(`${BASE}api/${action}/`, data);
@@ -91,12 +101,16 @@ function query() {
 function changed() {
   const count = dirty.size;
   $("save").disabled = !count || busy;
-  $("discard").disabled = !count || busy;
+  $("discard").disabled = !count || busy || uncertain;
+  $("add").disabled = busy || uncertain || loading;
+  $("sheet").inert = busy || uncertain || loading;
   $("save").textContent = busy
     ? "Saving…"
-    : count
-      ? `Save ${count} changed row${count === 1 ? "" : "s"}`
-      : "Save changes";
+    : uncertain
+      ? "Retry save"
+      : count
+        ? `Save ${count} changed row${count === 1 ? "" : "s"}`
+        : "Save changes";
 }
 function mark(row, key, value) {
   if (busy) return;
@@ -251,16 +265,28 @@ function guard() {
   return false;
 }
 async function load() {
-  const result = await request(`${BASE}api/rows/?${query()}`);
-  rows = result.rows;
-  page = result.page;
-  pages = result.pages;
-  render();
-  $("count").textContent = `${result.total.toLocaleString()} parts`;
-  $("page").textContent = `Page ${page} of ${pages}`;
-  $("prev").disabled = page <= 1;
-  $("nextpage").disabled = page >= pages;
-  message("Ready. Edits are saved when you choose Save changes.");
+  const version = ++loadVersion;
+  loading = true;
+  changed();
+  try {
+    const result = await request(`${BASE}api/rows/?${query()}`);
+    if (version !== loadVersion) return;
+    rows = result.rows;
+    page = result.page;
+    pages = result.pages;
+    render();
+    $("count").textContent =
+      `${result.total.toLocaleString()} part${result.total === 1 ? "" : "s"}`;
+    $("page").textContent = `Page ${page} of ${pages}`;
+    $("prev").disabled = page <= 1;
+    $("nextpage").disabled = page >= pages;
+    message("Ready. Edits are saved when you choose Save changes.");
+  } finally {
+    if (version === loadVersion) {
+      loading = false;
+      changed();
+    }
+  }
 }
 async function refreshConfig() {
   config = await api("bootstrap");
@@ -315,6 +341,7 @@ function addRow(focus = true) {
 async function save() {
   if (!dirty.size || busy) return;
   busy = true;
+  if ($("details").open) $("details").close();
   changed();
   document
     .querySelectorAll("#sheet input,#sheet select")
@@ -323,6 +350,7 @@ async function save() {
     pendingKey ||= crypto.randomUUID();
     pendingPayload ||= { key: pendingKey, rows: [...dirty.values()] };
     await api("save", pendingPayload);
+    uncertain = false;
     dirty.clear();
     pendingKey = null;
     pendingPayload = null;
@@ -331,7 +359,13 @@ async function save() {
     await load();
     message("Changes saved. New rows are now InvenTree parts.");
   } catch (error) {
-    message(error.message, true);
+    uncertain = dirty.size > 0 && (!error.status || error.status >= 500);
+    message(
+      uncertain
+        ? "Save outcome unknown. Click Retry save before editing again; the same request will not create duplicate parts."
+        : error.message,
+      true,
+    );
   } finally {
     busy = false;
     render();
