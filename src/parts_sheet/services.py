@@ -131,7 +131,12 @@ def edit_parts(user, payload):
                 details.save()
             price_result = None
             if row.get("price") is not None:
-                price_result = pricing.save_price(user, part, row["price"])
+                price_values = dict(row["price"])
+                if creating:
+                    price_values["token"] = pricing.price_state(
+                        part, price_values.get("customer"), price_values.get("quantity", 1)
+                    )["token"]
+                price_result = pricing.save_price(user, part, price_values)
             observe(part.IPN or "", series)
             part = Part.objects.select_related("category", "sheet_details").get(pk=part.pk)
             ChangeRecord.objects.create(user=user, action="create" if creating else "edit",

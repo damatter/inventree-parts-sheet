@@ -102,6 +102,14 @@ def test_actual_customer_pricing_and_native_sync(user):
     assert PartPricingPolicy.objects.get(part=part).last_sync_error == ""
 
 
+def test_create_part_and_customer_price_in_one_save(user):
+    customer = Company.objects.create(name="Customer")
+    result = edit_parts(user, payload([new(price={"customer":customer.pk, "quantity":1,
+             "price":"32.50", "currency":"CAD"})]))
+    part = Part.objects.get(pk=result["rows"][0]["id"])
+    assert CustomerPriceList.objects.get(part=part).breaks.get(quantity=1).price == Decimal("32.5")
+
+
 def test_price_edits_preserve_other_tiers_and_customers(user):
     part = Part.objects.create(name="Part")
     a = Company.objects.create(name="A")

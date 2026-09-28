@@ -38,7 +38,7 @@ function inputFor(row, key) {
     else input=el('input',undefined,{type:'text',value:key==='price'?(row.price?.price || ''):native.has(key)?row[key] || '':row.cells[key] || ''});
     input.dataset.field=key;
     input.setAttribute('aria-label',`${key.replaceAll('_',' ')} for ${row.ipn || 'new part'}`);
-    input.disabled=key==='price'?!config.pricing.edit || !row.id || row.price?.active===false:row.id?!config.permissions.change:!config.permissions.add;
+    input.disabled=key==='price'?!config.pricing.edit || row.price?.active===false:row.id?!config.permissions.change:!config.permissions.add;
     input.addEventListener('input',()=>mark(row,key,key==='active'?input.checked:key==='category_id'?(Number(input.value)||null):input.value));
     return input;
 }

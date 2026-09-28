@@ -36,4 +36,4 @@ jobs:
             -e INVENTREE_SITE_URL=http://localhost \
             -e INVENTREE_DEBUG=true \
             -v "$PWD:/plugin-src:ro" inventree/inventree:1.3.5 \
-            -lc 'set -e; mkdir -p /home/inventree/data; pip install /plugin-src git+https://github.com/damatter/inventree-customer-pricing.git@4fb8551178668cffc54e7dda8cfde39cf880083a; cd /home/inventree/src/backend/InvenTree; python manage.py migrate --noinput; python manage.py shell < /plugin-src/tests/inventree_smoke.py'
+            -lc 'set -e; mkdir -p /home/inventree/data; cp -R /plugin-src /tmp/plugin-build; pip install /tmp/plugin-build git+https://github.com/damatter/inventree-customer-pricing.git@4fb8551178668cffc54e7dda8cfde39cf880083a; cd /home/inventree/src/backend/InvenTree; python manage.py migrate --noinput; python manage.py shell < /plugin-src/tests/inventree_smoke.py'
