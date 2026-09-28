@@ -1,0 +1,4 @@
+include LICENSE README.md
+recursive-include src/parts_sheet/assets *.js *.css
+recursive-include src/parts_sheet/templates *.html
+recursive-include tests *.py

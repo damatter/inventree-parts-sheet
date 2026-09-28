@@ -23,11 +23,16 @@ class PartsSheetPlugin(AppMixin, UrlsMixin, UserInterfaceMixin, InvenTreePlugin)
         def lazy(name):
             def dispatch(request, *args, **kwargs):
                 from . import views
+
                 return getattr(views, name)(request, *args, **kwargs)
+
             return dispatch
-        return [path("", lazy("index"), name="index"),
-                path("assets/<str:filename>", auth_exempt(lazy("asset")), name="asset"),
-                path("api/<str:action>/", lazy("api"), name="api")]
+
+        return [
+            path("", lazy("index"), name="index"),
+            path("assets/<str:filename>", auth_exempt(lazy("asset")), name="asset"),
+            path("api/<str:action>/", lazy("api"), name="api"),
+        ]
 
     def source(self, function):
         return f"/{self.base_url.lstrip('/')}assets/shortcut.js:{function}?v={self.VERSION}"
@@ -36,14 +41,31 @@ class PartsSheetPlugin(AppMixin, UrlsMixin, UserInterfaceMixin, InvenTreePlugin)
         from django.core.exceptions import PermissionDenied
 
         from .services import require_part
+
         try:
             require_part(request.user, "view")
         except PermissionDenied:
             return []
-        return [{"key": "parts-sheet", "title": self.TITLE,
-                 "description": self.DESCRIPTION, "source": self.source("renderPartsSheet"),
-                 "options": {"width": 3, "height": 2}}]
+        return [
+            {
+                "key": "parts-sheet",
+                "title": self.TITLE,
+                "description": self.DESCRIPTION,
+                "source": self.source("renderPartsSheet"),
+                "options": {"width": 3, "height": 2},
+            }
+        ]
 
     def get_ui_spotlight_actions(self, request, context, **kwargs):
-        return [{"key": "open-parts-sheet", "title": self.TITLE, "icon": "ti:table",
-                 "source": self.source("openPartsSheet")}] if self.get_ui_dashboard_items(request, context) else []
+        return (
+            [
+                {
+                    "key": "open-parts-sheet",
+                    "title": self.TITLE,
+                    "icon": "ti:table",
+                    "source": self.source("openPartsSheet"),
+                }
+            ]
+            if self.get_ui_dashboard_items(request, context)
+            else []
+        )

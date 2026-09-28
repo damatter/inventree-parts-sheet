@@ -1,4 +1,5 @@
 """Minimal host contract. Customer Pricing itself is loaded from its real source."""
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from djmoney.models.fields import MoneyField

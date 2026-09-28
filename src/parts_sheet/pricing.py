@@ -19,9 +19,11 @@ def capabilities(user):
     except ImportError:
         return result
     if user_has_pricing_access(user):
-        for key, role, action in (("view", "sales_order", "view"),
-                                  ("edit", "sales_order", "change"),
-                                  ("costs", "purchase_order", "view")):
+        for key, role, action in (
+            ("view", "sales_order", "view"),
+            ("edit", "sales_order", "change"),
+            ("costs", "purchase_order", "view"),
+        ):
             result[key] = bool(user.is_superuser or check_user_role(user, role, action))
     result["edit"] = result["edit"] and result["view"]
     return result
@@ -39,8 +41,13 @@ def price_state(part, customer_id, quantity):
     data = {"list_id": None, "active": True, "currency": "", "price": "", "break_id": None}
     if schedule:
         tier = schedule.breaks.filter(quantity=quantity).first()
-        data.update(list_id=schedule.pk, active=schedule.active, currency=schedule.currency,
-                    price=str(tier.price) if tier else "", break_id=tier.pk if tier else None)
+        data.update(
+            list_id=schedule.pk,
+            active=schedule.active,
+            currency=schedule.currency,
+            price=str(tier.price) if tier else "",
+            break_id=tier.pk if tier else None,
+        )
     data["token"] = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
     return data
 
@@ -54,27 +61,39 @@ def save_price(user, part, values):
         CustomerPriceListSerializer,
     )
 
-    customer = Company.objects.filter(pk=values.get("customer"), is_customer=True, active=True).first()
+    customer = Company.objects.filter(
+        pk=values.get("customer"), is_customer=True, active=True
+    ).first()
     if not customer:
         raise ValidationError("Choose an active InvenTree customer.")
     # Serializer enforces the pricing plugin's precision and quantity/price limits.
-    tier_input = CustomerPriceBreakSerializer(data={"quantity": values.get("quantity", 1),
-                                                   "price": values.get("price")})
+    tier_input = CustomerPriceBreakSerializer(
+        data={"quantity": values.get("quantity", 1), "price": values.get("price")}
+    )
     tier_input.is_valid(raise_exception=True)
     quantity = tier_input.validated_data["quantity"]
-    schedule = CustomerPriceList.objects.select_for_update().filter(part=part, customer=customer).first()
+    schedule = (
+        CustomerPriceList.objects.select_for_update().filter(part=part, customer=customer).first()
+    )
     if schedule:
         list(CustomerPriceBreak.objects.select_for_update().filter(price_list=schedule))
     current = price_state(part, customer.pk, quantity)
     if values.get("token") != current["token"]:
         raise ValidationError("This customer price changed. Reload before saving.")
     if not current["active"]:
-        raise ValidationError("This customer's price list is inactive. Activate it in Part Pricing first.")
+        raise ValidationError(
+            "This customer's price list is inactive. Activate it in Part Pricing first."
+        )
     if schedule and values.get("currency", schedule.currency).upper() != schedule.currency:
         raise ValidationError("Currency must match the customer's existing price list.")
     if schedule is None:
-        serializer = CustomerPriceListSerializer(data={"customer": customer.pk,
-                "currency": values.get("currency") or customer.currency or "CAD", "active": True})
+        serializer = CustomerPriceListSerializer(
+            data={
+                "customer": customer.pk,
+                "currency": values.get("currency") or customer.currency or "CAD",
+                "active": True,
+            }
+        )
         serializer.is_valid(raise_exception=True)
         schedule = serializer.save(part=part)
     tier = schedule.breaks.filter(quantity=quantity).first()

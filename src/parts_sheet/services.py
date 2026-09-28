@@ -13,8 +13,26 @@ from . import pricing
 from .models import ChangeRecord, Operation, SheetDetails
 from .numbering import allocate, lock_series, observe
 
-FIELDS = ("name", "description", "category_id", "active", "assembly", "component", "purchaseable", "salable")
-CELL_FIELDS = ("required", "oem_number", "drawing", "make_model", "material", "size", "notes", "date_priced")
+FIELDS = (
+    "name",
+    "description",
+    "category_id",
+    "active",
+    "assembly",
+    "component",
+    "purchaseable",
+    "salable",
+)
+CELL_FIELDS = (
+    "required",
+    "oem_number",
+    "drawing",
+    "make_model",
+    "material",
+    "size",
+    "notes",
+    "date_priced",
+)
 LEGACY_PRICE_FIELDS = ("oem_usd", "supplier_cad", "sell_cad")
 
 
@@ -32,8 +50,12 @@ def part_state(part):
         cells = dict(part.sheet_details.cells)
     except SheetDetails.DoesNotExist:
         cells = {}
-    return {**{field: getattr(part, field) for field in FIELDS}, "ipn": part.IPN or "",
-            "revision": part.revision or "", "cells": cells}
+    return {
+        **{field: getattr(part, field) for field in FIELDS},
+        "ipn": part.IPN or "",
+        "revision": part.revision or "",
+        "cells": cells,
+    }
 
 
 def serialize_part(part, user):
@@ -45,8 +67,13 @@ def serialize_part(part, user):
             data["cells"].pop(key, None)
     if not caps["view"]:
         data["cells"].pop("sell_cad", None)
-    return {**data, "id": part.pk, "token": token, "url": f"/web/part/{part.pk}/",
-            "category": str(part.category) if part.category_id else "Uncategorised"}
+    return {
+        **data,
+        "id": part.pk,
+        "token": token,
+        "url": f"/web/part/{part.pk}/",
+        "category": str(part.category) if part.category_id else "Uncategorised",
+    }
 
 
 def idempotent(user, key, payload, action):
@@ -109,7 +136,9 @@ def edit_parts(user, payload):
                 part = Part.objects.select_for_update().get(pk=row["id"])
                 before = part_state(part)
                 if row.get("token") != digest(before):
-                    raise ValidationError(f"{part.IPN or part.name} changed elsewhere. Reload before saving.")
+                    raise ValidationError(
+                        f"{part.IPN or part.name} changed elsewhere. Reload before saving."
+                    )
                 if part_changes or cells:
                     require_part(user, "change")
             if set(part_changes) - set(FIELDS):
@@ -117,7 +146,10 @@ def edit_parts(user, payload):
             if set(cells) - set(CELL_FIELDS):
                 raise ValidationError("That supplemental cell cannot be edited here.")
             for field, value in part_changes.items():
-                if field in ("active", "assembly", "component", "purchaseable", "salable") and type(value) is not bool:
+                if (
+                    field in ("active", "assembly", "component", "purchaseable", "salable")
+                    and type(value) is not bool
+                ):
                     raise ValidationError("Status fields must be true or false.")
                 setattr(part, field, value)
             if creating or part_changes:
@@ -125,7 +157,9 @@ def edit_parts(user, payload):
                 part.save()
             if cells:
                 if any(not isinstance(v, str) or len(v) > 2000 for v in cells.values()):
-                    raise ValidationError("Supplemental cells must be text of at most 2000 characters.")
+                    raise ValidationError(
+                        "Supplemental cells must be text of at most 2000 characters."
+                    )
                 details, _ = SheetDetails.objects.get_or_create(part=part)
                 details.cells = {**details.cells, **cells}
                 details.save()
@@ -139,10 +173,29 @@ def edit_parts(user, payload):
                 price_result = pricing.save_price(user, part, price_values)
             observe(part.IPN or "", series)
             part = Part.objects.select_related("category", "sheet_details").get(pk=part.pk)
-            ChangeRecord.objects.create(user=user, action="create" if creating else "edit",
-                    details={"part": part.pk, "ipn": part.IPN, "before": before,
-                             "after": part_state(part), "pricing_changed": price_result is not None})
+            ChangeRecord.objects.create(
+                user=user,
+                action="create" if creating else "edit",
+                details={
+                    "part": part.pk,
+                    "ipn": part.IPN,
+                    "before": before,
+                    "after": part_state(part),
+                    "pricing_changed": price_result is not None,
+                },
+            )
             saved.append({**serialize_part(part, user), "price": price_result})
         return {"rows": saved}
 
-    return idempotent(user, payload.get("key"), payload, save)
+    result = idempotent(user, payload.get("key"), payload, save)
+    caps = pricing.capabilities(user)
+    # Receipts may outlive a user's access-group membership. Apply today's
+    # sensitive-data policy to cached responses as well as newly saved rows.
+    for row in result["rows"]:
+        if not caps["costs"]:
+            for key in ("oem_usd", "supplier_cad"):
+                row["cells"].pop(key, None)
+        if not caps["view"]:
+            row["cells"].pop("sell_cad", None)
+            row.pop("price", None)
+    return result

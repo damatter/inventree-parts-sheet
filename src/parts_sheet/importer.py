@@ -12,12 +12,22 @@ from django.core.exceptions import ValidationError
 from part.models import Part
 
 ALIASES = {
-    "part description": "name", "name": "name", "description": "name",
-    "dicor part number": "ipn", "part number": "ipn", "ipn": "ipn",
-    "# req'd": "required", "burt #": "oem_number", "dc# added to dwg": "drawing",
-    "oem (usd)": "oem_usd", "local supplier (cad)": "supplier_cad",
-    "dc sell (cad)": "sell_cad", "date priced": "date_priced",
-    "make/model": "make_model", "material spec": "material", "size/ratio/tth": "size",
+    "part description": "name",
+    "name": "name",
+    "description": "name",
+    "dicor part number": "ipn",
+    "part number": "ipn",
+    "ipn": "ipn",
+    "# req'd": "required",
+    "burt #": "oem_number",
+    "dc# added to dwg": "drawing",
+    "oem (usd)": "oem_usd",
+    "local supplier (cad)": "supplier_cad",
+    "dc sell (cad)": "sell_cad",
+    "date priced": "date_priced",
+    "make/model": "make_model",
+    "material spec": "material",
+    "size/ratio/tth": "size",
     "notes": "notes",
 }
 
@@ -39,6 +49,7 @@ def read_workbook(content, filename):
     sheets = []
     if ext == "xls":
         import xlrd
+
         book = xlrd.open_workbook(file_contents=content, on_demand=True)
         try:
             for sheet in book.sheets():
@@ -46,13 +57,20 @@ def read_workbook(content, filename):
                     raise ValidationError("Maximum 10,000 rows and 100 columns per sheet.")
                 rows = []
                 for row in sheet.get_rows():
-                    rows.append([xlrd.xldate.xldate_as_datetime(c.value, book.datemode)
-                                 if c.ctype == xlrd.XL_CELL_DATE else c.value for c in row])
+                    rows.append(
+                        [
+                            xlrd.xldate.xldate_as_datetime(c.value, book.datemode)
+                            if c.ctype == xlrd.XL_CELL_DATE
+                            else c.value
+                            for c in row
+                        ]
+                    )
                 sheets.append((sheet.name, rows))
         finally:
             book.release_resources()
     elif ext == "xlsx":
         import openpyxl
+
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             if sum(item.file_size for item in archive.infolist()) > 50 * 1024 * 1024:
                 raise ValidationError("The expanded workbook is too large.")
@@ -86,26 +104,36 @@ def parse_sheets(sheets):
         if header is None:
             warnings.append(f"{sheet_name}: skipped (no part-number column).")
             continue
-        for row in rows[:header[0]]:
+        for row in rows[: header[0]]:
             if any("last number used" in text_cell(v).casefold() for v in row):
                 for value in row:
                     text = text_cell(value)
                     if re.fullmatch(r"100[789][0-9]{3}", text):
                         counters[text[:4]] = max(counters.get(text[:4], 0), int(text[4:]))
-        for index, raw in enumerate(rows[header[0] + 1:], header[0] + 2):
+        for index, raw in enumerate(rows[header[0] + 1 :], header[0] + 2):
             row = {key: text_cell(raw[i]) for i, key in header[1].items() if key and i < len(raw)}
             if not row.get("name") or row.get("name", "").casefold() == "part description":
                 continue
             if not row.get("ipn") and not any(v for k, v in row.items() if k != "name"):
                 warnings.append(f"{sheet_name} row {index}: skipped section heading {row['name']}.")
                 continue
-            extra = [text_cell(v) for i, v in enumerate(raw) if not header[1].get(i) and text_cell(v)]
+            extra = [
+                text_cell(v) for i, v in enumerate(raw) if not header[1].get(i) and text_cell(v)
+            ]
             if extra:
                 row["notes"] = " | ".join(filter(None, [row.get("notes", ""), *extra]))
-            result.append({"source": f"{sheet_name}:{index}", "ipn": row.pop("ipn", ""),
-                           "name": row.pop("name"), "cells": row})
+            result.append(
+                {
+                    "source": f"{sheet_name}:{index}",
+                    "ipn": row.pop("ipn", ""),
+                    "name": row.pop("name"),
+                    "cells": row,
+                }
+            )
     if not result:
-        raise ValidationError("No part rows found. Include Part Description and DiCor Part Number columns.")
+        raise ValidationError(
+            "No part rows found. Include Part Description and DiCor Part Number columns."
+        )
     if len(result) > 2000:
         raise ValidationError("Import at most 2,000 parts at once.")
     return result, warnings, counters
@@ -117,9 +145,23 @@ def classify(rows):
     for row in rows:
         matches = list(Part.objects.filter(IPN__iexact=row["ipn"])[:2]) if row["ipn"] else []
         conflict = counts[row["ipn"].casefold()] > 1 if row["ipn"] else False
-        status = "conflict" if conflict or len(matches) > 1 else "matched" if matches else "new" if row["ipn"] else "unnumbered"
-        result.append({**row, "status": status, "part_id": matches[0].pk if len(matches) == 1 else None,
-                       "existing_name": matches[0].name if len(matches) == 1 else ""})
+        status = (
+            "conflict"
+            if conflict or len(matches) > 1
+            else "matched"
+            if matches
+            else "new"
+            if row["ipn"]
+            else "unnumbered"
+        )
+        result.append(
+            {
+                **row,
+                "status": status,
+                "part_id": matches[0].pk if len(matches) == 1 else None,
+                "existing_name": matches[0].name if len(matches) == 1 else "",
+            }
+        )
     return result
 
 

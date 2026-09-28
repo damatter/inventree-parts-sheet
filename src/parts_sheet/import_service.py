@@ -27,7 +27,9 @@ def import_rows(user, payload):
     def apply(series):
         rows = classify(preview.rows)
         if any(r["status"] == "conflict" for r in rows):
-            raise ValidationError("Duplicate part numbers need resolving before this import can run.")
+            raise ValidationError(
+                "Duplicate part numbers need resolving before this import can run."
+            )
         category_id = payload.get("category") or None
         active = payload.get("active", False)
         if type(active) is not bool:
@@ -52,8 +54,14 @@ def import_rows(user, payload):
                 if not row["ipn"] and selected is None:
                     raise ValidationError("Choose a series for rows without a part number.")
                 ipn = row["ipn"] or allocate(selected)
-                part = Part(name=row["name"], IPN=ipn, category_id=category_id, active=active,
-                            salable=True, component=True)
+                part = Part(
+                    name=row["name"],
+                    IPN=ipn,
+                    category_id=category_id,
+                    active=active,
+                    salable=True,
+                    component=True,
+                )
                 part.full_clean()
                 part.save()
                 counts["created"] += 1
@@ -70,13 +78,28 @@ def import_rows(user, payload):
             price = exact_price(row["cells"].get("sell_cad", ""))
             if customer_id and price is not None:
                 current = pricing.price_state(part, customer_id, 1)
-                if current["break_id"] or not current["active"] or current["currency"] not in ("", "CAD"):
+                if (
+                    current["break_id"]
+                    or not current["active"]
+                    or current["currency"] not in ("", "CAD")
+                ):
                     counts["prices_kept"] += 1
                 else:
-                    pricing.save_price(user, part, {"customer": customer_id, "quantity": 1,
-                            "price": str(price), "currency": "CAD", "token": current["token"]})
+                    pricing.save_price(
+                        user,
+                        part,
+                        {
+                            "customer": customer_id,
+                            "quantity": 1,
+                            "price": str(price),
+                            "currency": "CAD",
+                            "token": current["token"],
+                        },
+                    )
                     counts["prices_added"] += 1
-        ChangeRecord.objects.create(user=user, action="import", details={"preview": str(preview.pk), **counts})
+        ChangeRecord.objects.create(
+            user=user, action="import", details={"preview": str(preview.pk), **counts}
+        )
         return counts
 
     return idempotent(user, payload.get("key"), payload, apply)
