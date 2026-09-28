@@ -7,7 +7,7 @@ from decimal import Decimal
 from company.models import Company
 from django.contrib.auth import get_user_model
 from django.test import Client
-from inventree_customer_pricing.models import CustomerPriceList
+from inventree_customer_pricing.models import CustomerPriceList, PartPricingPolicy
 from part.models import Part, PartSellPriceBreak
 from plugin.registry import registry
 
@@ -51,12 +51,19 @@ edit_parts(
     },
 )
 assert CustomerPriceList.objects.get(part=part).breaks.get(quantity=1).price == Decimal("42.50")
+policy = PartPricingPolicy.objects.filter(part=part).first()
+assert policy is not None, "Customer Pricing synchronization signal did not run"
+assert not policy.last_sync_error, policy.last_sync_error
 assert PartSellPriceBreak.objects.get(part=part).price.amount == Decimal("42.50")
 part.refresh_from_db()
 assert part.active and part.assembly
 client = Client(HTTP_HOST="localhost")
 client.force_login(user)
 assert client.get("/plugin/parts-sheet/").status_code == 200
+response = client.get("/plugin/parts-sheet/api/bootstrap/")
+assert response.status_code == 200, response.content
+assert response.json()["pricing"]["edit"]
+assert any(row["id"] == customer.pk for row in response.json()["customers"])
 response = client.get("/plugin/parts-sheet/api/rows/")
 assert response.status_code == 200, response.content
 assert any(row["id"] == part.pk for row in json.loads(response.content)["rows"])

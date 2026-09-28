@@ -19,8 +19,8 @@ In InvenTree's plugin installer:
 git+https://github.com/damatter/inventree-parts-sheet.git@0.1.0
 ```
 
-Leave the separate version field blank. Enable **Parts Sheet**, **App integration**
-and **User interface integration** in plugin settings. Run your usual update so the
+Leave the separate version field blank. Enable **Parts Sheet**, **App integration**,
+**URL integration** and **User interface integration** in plugin settings. Run your usual update so the
 plugin's database migrations are applied, then restart both processes:
 
 ```sh

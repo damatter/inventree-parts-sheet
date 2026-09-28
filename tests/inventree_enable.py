@@ -17,6 +17,7 @@ print(
 
 for key in ("ENABLE_PLUGINS_APP", "ENABLE_PLUGINS_URL", "ENABLE_PLUGINS_INTERFACE"):
     InvenTreeSetting.set_setting(key, True)
+InvenTreeSetting.set_setting("INVENTREE_DEFAULT_CURRENCY", "CAD")
 for plugin in registry.collect_plugins():
     # A fresh database also needs records for built-in plugins. The shell command
     # cannot auto-create them; an absent built-in record aborts host initialization
