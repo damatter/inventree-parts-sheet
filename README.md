@@ -75,8 +75,8 @@ customers and quantity breaks are preserved. Existing list currencies cannot be
 changed here, and inactive lists must first be activated in Part Pricing. A new
 list uses the chosen currency (initially the customer's currency or CAD).
 
-The integration uses Customer Pricing's own models and serializers. Its save
-signals continue to update native InvenTree sale-price breaks. Those same records
+The integration uses Customer Pricing's own models and serializers, and requests
+its native sale-price synchronization after a successful transaction. Those same records
 remain available to Quote Generator and Inventory Manager. No price table is
 duplicated. **Details** shows customer schedules and permitted material-cost
 information, with a link to the native part page for the full Part Pricing tab.

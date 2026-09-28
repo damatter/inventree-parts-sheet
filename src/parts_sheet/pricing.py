@@ -4,6 +4,7 @@ import hashlib
 import json
 
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 
 
 def capabilities(user):
@@ -56,6 +57,7 @@ def save_price(user, part, values):
     require(user, edit=True)
     from company.models import Company
     from inventree_customer_pricing.models import CustomerPriceBreak, CustomerPriceList
+    from inventree_customer_pricing.native_sync import sync_part_sale_prices_safely
     from inventree_customer_pricing.serializers import (
         CustomerPriceBreakSerializer,
         CustomerPriceListSerializer,
@@ -100,5 +102,8 @@ def save_price(user, part, values):
     serializer = CustomerPriceBreakSerializer(tier, data=tier_input.validated_data)
     serializer.is_valid(raise_exception=True)
     serializer.save(price_list=schedule)
-    # Normal model saves invoke Customer Pricing's on_commit native-price sync.
+    # AppMixin can reload model classes without reconnecting the pricing plugin's
+    # original signal senders. Explicitly request its idempotent sync after commit
+    # so saves and imports still update native pricing in that host lifecycle.
+    transaction.on_commit(lambda: sync_part_sale_prices_safely(part.pk))
     return price_state(part, customer.pk, quantity)

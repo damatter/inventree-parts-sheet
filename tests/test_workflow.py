@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from company.models import Company
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import close_old_connections
+from django.db import close_old_connections, transaction
 from inventree_customer_pricing.models import (
     CustomerPriceBreak,
     CustomerPriceList,
@@ -143,6 +143,26 @@ def test_create_part_and_customer_price_in_one_save(user):
     )
     part = Part.objects.get(pk=result["rows"][0]["id"])
     assert CustomerPriceList.objects.get(part=part).breaks.get(quantity=1).price == Decimal("32.5")
+
+
+def test_sync_survives_missing_pricing_signals_and_waits_for_commit(user, monkeypatch):
+    from inventree_customer_pricing import signals
+
+    monkeypatch.setattr(signals, "_queue_sync", lambda part_id: None)
+    customer = Company.objects.create(name="Customer")
+    request = payload([new(price={"customer": customer.pk, "price": "32.50", "currency": "CAD"})])
+    with transaction.atomic():
+        result = edit_parts(user, request)
+        assert not PartSellPriceBreak.objects.exists()
+    part = Part.objects.get(pk=result["rows"][0]["id"])
+    assert PartSellPriceBreak.objects.get(part=part).price.amount == Decimal("32.5")
+
+    with pytest.raises(ValidationError):
+        edit_parts(
+            user, payload([new(price={"customer": customer.pk, "price": "99"}), new(name="")])
+        )
+    assert Part.objects.count() == 1
+    assert PartSellPriceBreak.objects.count() == 1
 
 
 def test_price_edits_preserve_other_tiers_and_customers(user):
