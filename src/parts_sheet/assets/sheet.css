@@ -353,6 +353,9 @@ fieldset {
   display: flex;
   align-items: center;
 }
+#sheet td:first-child {
+  padding: 0 7px;
+}
 #sheet .numberbox input {
   min-width: 116px;
   padding: 6px 3px;

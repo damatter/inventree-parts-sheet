@@ -100,8 +100,8 @@ def idempotent(user, key, payload, action):
 def edit_parts(user, payload):
     require_part(user, "view")
     rows = payload.get("rows")
-    if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
-        raise ValidationError("Save between 1 and 100 rows at a time.")
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 200:
+        raise ValidationError("Save between 1 and 200 rows at a time.")
     ids = [r.get("id") for r in rows if r.get("id")]
     if len(ids) != len(set(ids)):
         raise ValidationError("A part can only appear once in a save.")

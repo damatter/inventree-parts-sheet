@@ -305,6 +305,7 @@ async function load() {
   const version = ++loadVersion;
   loading = true;
   changed();
+  message("Loading catalogue…");
   try {
     const result = await request(`${BASE}api/rows/?${query()}`);
     if (version !== loadVersion) return;
@@ -948,8 +949,8 @@ $("sheet").addEventListener("paste", (event) => {
     .replace(/\n$/, "")
     .split("\n")
     .map((r) => r.split("\t"));
-  if (blocks.length > 100) {
-    message("Paste at most 100 rows at once.", true);
+  if (blocks.length > 200) {
+    message("Paste at most 200 rows at once.", true);
     return;
   }
   const startRow = rows.findIndex(
