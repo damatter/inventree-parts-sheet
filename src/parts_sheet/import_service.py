@@ -51,11 +51,17 @@ def import_rows(user, payload):
                 part = Part.objects.select_for_update().get(pk=row["part_id"] or link.part_id)
                 counts["matched"] += 1
             else:
+                oem = str(row["cells"].get("oem_number", "")).strip()
+                if not oem:
+                    raise ValidationError(
+                        f"{row['source']} ({row['ipn'] or row['name']}): add an OEM PN before importing this new part."
+                    )
                 if not row["ipn"] and selected is None:
                     raise ValidationError("Choose a series for rows without a part number.")
                 ipn = row["ipn"] or allocate(selected)
                 part = Part(
-                    name=row["name"],
+                    name=oem,
+                    description=row["name"],
                     IPN=ipn,
                     category_id=category_id,
                     active=active,

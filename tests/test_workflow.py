@@ -256,8 +256,13 @@ def test_import_matching_new_unnumbered_idempotence_and_prices(user):
             "ipn": "1008927",
             "cells": {"sell_cad": "10", "material": "Bronze"},
         },
-        {"source": "Sheet:10", "name": "New part", "ipn": "1008005", "cells": {"sell_cad": "20"}},
-        {"source": "Sheet:11", "name": "No number", "ipn": "", "cells": {}},
+        {
+            "source": "Sheet:10",
+            "name": "New part",
+            "ipn": "1008005",
+            "cells": {"sell_cad": "20", "oem_number": "OEM-005"},
+        },
+        {"source": "Sheet:11", "name": "No number", "ipn": "", "cells": {"oem_number": "OEM-006"}},
     ]
     preview = ImportPreview.objects.create(
         key=uuid.uuid4(), user=user, rows=rows, counters={"1008": 272}
@@ -273,7 +278,8 @@ def test_import_matching_new_unnumbered_idempotence_and_prices(user):
     assert result == {"created": 2, "matched": 1, "skipped": 0, "prices_added": 1, "prices_kept": 1}
     existing.refresh_from_db()
     assert existing.name == "Native name" and existing.active
-    assert Part.objects.get(name="No number").IPN == "1008928"
+    assert Part.objects.get(name="OEM-006").IPN == "1008928"
+    assert Part.objects.get(name="OEM-005").description == "New part"
     assert import_rows(user, data) == result
     data["key"] = str(uuid.uuid4())
     assert import_rows(user, data)["created"] == 0

@@ -12,12 +12,19 @@ def capabilities(user):
     from users.permissions import check_user_role
 
     installed = registry.get_plugin("customer-pricing", active=True) is not None
-    result = {"installed": installed, "view": False, "edit": False, "costs": False}
+    result = {
+        "installed": installed,
+        "view": False,
+        "edit": False,
+        "costs": False,
+        "message": "Enable the Customer Pricing plugin to use Part Pricing.",
+    }
     if not installed:
         return result
     try:
         from inventree_customer_pricing.access import user_has_pricing_access
     except ImportError:
+        result["message"] = "Update Customer Pricing to 0.6.1 or later, then restart the server."
         return result
     if user_has_pricing_access(user):
         for key, role, action in (
@@ -27,6 +34,13 @@ def capabilities(user):
         ):
             result[key] = bool(user.is_superuser or check_user_role(user, role, action))
     result["edit"] = result["edit"] and result["view"]
+    result["message"] = (
+        "Choose a customer to show their prices in the sheet, or open Part Pricing on a row."
+        if result["view"]
+        else "Material costs are available in Part Pricing. Sales permission is required for customer prices."
+        if result["costs"]
+        else "Ask an administrator for the Customer Pricing access group and sales or purchasing permissions."
+    )
     return result
 
 

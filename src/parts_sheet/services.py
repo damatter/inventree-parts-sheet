@@ -12,6 +12,7 @@ from users.permissions import check_user_permission
 from . import pricing
 from .models import ChangeRecord, Operation, SheetDetails
 from .numbering import allocate, lock_series, observe
+from .stock import create_opening_stock, require_stock
 
 FIELDS = (
     "name",
@@ -73,6 +74,8 @@ def serialize_part(part, user):
         "token": token,
         "url": f"/web/part/{part.pk}/",
         "category": str(part.category) if part.category_id else "Uncategorised",
+        "thumbnail": part.get_thumbnail_url() if part.image else "",
+        "image": part.get_image_url() if part.image else "",
     }
 
 
@@ -107,8 +110,12 @@ def edit_parts(user, payload):
     for row in rows:
         if not row.get("id"):
             require_part(user, "add")
-        elif row.get("fields") or row.get("cells"):
+        elif row.get("fields") or row.get("cells") or "ipn" in row:
             require_part(user, "change")
+        if row.get("stock") is not None:
+            require_stock(user)
+            if row.get("id"):
+                raise ValidationError("Opening stock can only be added with a new part.")
         if row.get("price") is not None:
             pricing.require(user, edit=True)
 
@@ -141,6 +148,13 @@ def edit_parts(user, payload):
                     )
                 if part_changes or cells:
                     require_part(user, "change")
+                if "ipn" in row:
+                    number = str(row["ipn"] or "").strip()
+                    if not number:
+                        raise ValidationError("Enter the DiCor part number (internal part number).")
+                    if Part.objects.filter(IPN__iexact=number).exclude(pk=part.pk).exists():
+                        raise ValidationError(f"{number} already belongs to another part.")
+                    part.IPN = number
             if set(part_changes) - set(FIELDS):
                 raise ValidationError("That part field cannot be edited here.")
             if set(cells) - set(CELL_FIELDS):
@@ -152,9 +166,16 @@ def edit_parts(user, payload):
                 ):
                     raise ValidationError("Status fields must be true or false.")
                 setattr(part, field, value)
-            if creating or part_changes:
+            if "name" in part_changes:
+                part.name = str(part.name or "").strip()
+                if not part.name:
+                    raise ValidationError("Enter the OEM PN. This is the InvenTree part name.")
+            if creating or part_changes or "ipn" in row:
                 part.full_clean()
                 part.save()
+            stock_result = None
+            if row.get("stock") is not None:
+                stock_result = create_opening_stock(user, part, row["stock"])
             if cells:
                 if any(not isinstance(v, str) or len(v) > 2000 for v in cells.values()):
                     raise ValidationError(
@@ -182,9 +203,12 @@ def edit_parts(user, payload):
                     "before": before,
                     "after": part_state(part),
                     "pricing_changed": price_result is not None,
+                    "stock_item": stock_result["id"] if stock_result else None,
                 },
             )
-            saved.append({**serialize_part(part, user), "price": price_result})
+            saved.append(
+                {**serialize_part(part, user), "price": price_result, "stock": stock_result}
+            )
         return {"rows": saved}
 
     result = idempotent(user, payload.get("key"), payload, save)

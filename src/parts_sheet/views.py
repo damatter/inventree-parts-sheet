@@ -26,6 +26,7 @@ from .importer import classify, read_workbook
 from .models import ChangeRecord, ImportPreview, NumberSeries
 from .numbering import high_water, lock_series, snapshot
 from .services import edit_parts, require_part, serialize_part
+from .stock import can_add_stock
 
 
 @login_required
@@ -73,7 +74,10 @@ def filtered_parts(values):
 def bootstrap(user):
     from company.models import Company
     from plugin.registry import registry
+    from stock.models import StockLocation
     from users.permissions import check_user_permission
+
+    from .website import configured
 
     caps = pricing.capabilities(user)
     return {
@@ -82,6 +86,15 @@ def bootstrap(user):
         },
         "admin": bool(user.is_staff or user.is_superuser),
         "pricing": caps,
+        "stock_add": can_add_stock(user),
+        "locations": list(
+            StockLocation.objects.filter(structural=False)
+            .order_by("pathstring")
+            .values("id", "name", "pathstring")
+        )
+        if can_add_stock(user)
+        else [],
+        "website_sync": configured(),
         "series": [snapshot(s) for s in NumberSeries.objects.all()],
         "categories": [
             {"id": c.pk, "name": c.pathstring or c.name}
@@ -109,11 +122,11 @@ def export_csv(request):
     writer = csv.writer(buffer)
     writer.writerow(
         [
-            "Part Description",
             "DiCor Part Number",
+            "OEM PN",
+            "Part Description",
             "Category",
-            "Active",
-            "Burt #",
+            "Visible",
             "Make/Model",
             "Material Spec",
             "Size/Ratio/tth",
@@ -131,14 +144,12 @@ def export_csv(request):
             [
                 safe(v)
                 for v in [
-                    row["name"],
                     row["ipn"],
+                    row["name"],
+                    row["description"],
                     row["category"],
                     str(row["active"]),
-                    *[
-                        row["cells"].get(k, "")
-                        for k in ("oem_number", "make_model", "material", "size", "notes")
-                    ],
+                    *[row["cells"].get(k, "") for k in ("make_model", "material", "size", "notes")],
                 ]
             ]
         )
@@ -156,7 +167,10 @@ def api(request, action):
             if action == "bootstrap":
                 return JsonResponse(bootstrap(request.user))
             if action == "rows":
-                page = Paginator(filtered_parts(request.GET), 50).get_page(
+                page_size = int(request.GET.get("page_size", 50))
+                if page_size not in (25, 50, 100, 200):
+                    raise ValidationError("Choose 25, 50, 100 or 200 parts per page.")
+                page = Paginator(filtered_parts(request.GET), page_size).get_page(
                     request.GET.get("page", 1)
                 )
                 caps = pricing.capabilities(request.user)
@@ -176,11 +190,16 @@ def api(request, action):
                         "total": page.paginator.count,
                         "pages": page.paginator.num_pages,
                         "page": page.number,
+                        "page_size": page_size,
                     }
                 )
             if action == "export":
                 return export_csv(request)
         elif request.method == "POST":
+            if action == "sync":
+                from .website import request_sync
+
+                return request_sync(request.user)
             if action == "preview":
                 require_part(request.user, "add")
                 require_part(request.user, "change")

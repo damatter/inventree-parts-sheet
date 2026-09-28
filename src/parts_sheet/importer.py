@@ -13,13 +13,15 @@ from part.models import Part
 
 ALIASES = {
     "part description": "name",
-    "name": "name",
+    "name": "oem_number",
     "description": "name",
     "dicor part number": "ipn",
     "part number": "ipn",
     "ipn": "ipn",
     "# req'd": "required",
     "burt #": "oem_number",
+    "oem pn": "oem_number",
+    "oem part number": "oem_number",
     "dc# added to dwg": "drawing",
     "oem (usd)": "oem_usd",
     "local supplier (cad)": "supplier_cad",
@@ -98,7 +100,9 @@ def parse_sheets(sheets):
         header = None
         for index, row in enumerate(rows[:50]):
             mapping = {i: ALIASES.get(text_cell(v).casefold()) for i, v in enumerate(row)}
-            if "ipn" in mapping.values() and "name" in mapping.values():
+            if "ipn" in mapping.values() and (
+                "name" in mapping.values() or "oem_number" in mapping.values()
+            ):
                 header = (index, mapping)
                 break
         if header is None:
@@ -112,7 +116,10 @@ def parse_sheets(sheets):
                         counters[text[:4]] = max(counters.get(text[:4], 0), int(text[4:]))
         for index, raw in enumerate(rows[header[0] + 1 :], header[0] + 2):
             row = {key: text_cell(raw[i]) for i, key in header[1].items() if key and i < len(raw)}
-            if not row.get("name") or row.get("name", "").casefold() == "part description":
+            if (
+                not (row.get("name") or row.get("oem_number"))
+                or row.get("name", "").casefold() == "part description"
+            ):
                 continue
             if not row.get("ipn") and not any(v for k, v in row.items() if k != "name"):
                 warnings.append(f"{sheet_name} row {index}: skipped section heading {row['name']}.")
@@ -126,14 +133,12 @@ def parse_sheets(sheets):
                 {
                     "source": f"{sheet_name}:{index}",
                     "ipn": row.pop("ipn", ""),
-                    "name": row.pop("name"),
+                    "name": row.pop("name", ""),
                     "cells": row,
                 }
             )
     if not result:
-        raise ValidationError(
-            "No part rows found. Include Part Description and DiCor Part Number columns."
-        )
+        raise ValidationError("No part rows found. Include OEM PN and DiCor Part Number columns.")
     if len(result) > 2000:
         raise ValidationError("Import at most 2,000 parts at once.")
     return result, warnings, counters

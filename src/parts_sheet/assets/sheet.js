@@ -15,9 +15,9 @@ let uncertain = false,
 const dirty = new Map();
 const fields = [
   "name",
+  "description",
   "active",
   "category_id",
-  "oem_number",
   "make_model",
   "material",
   "size",
@@ -96,6 +96,7 @@ function query() {
     customer: $("customer").value,
     quantity: $("quantity").value || "1",
     page,
+    page_size: $("pagesize").value,
   });
 }
 function changed() {
@@ -167,7 +168,7 @@ function inputFor(row, key) {
   input.dataset.field = key;
   input.setAttribute(
     "aria-label",
-    `${key.replaceAll("_", " ")} for ${row.ipn || "new part"}`,
+    `${{ name: "OEM PN", active: "Visible", ipn: "DiCor Part Number" }[key] || key.replaceAll("_", " ")} for ${row.ipn || "new part"}`,
   );
   input.disabled =
     key === "price"
@@ -199,31 +200,56 @@ function render() {
     tr.dataset.key = row._key;
     if (dirty.has(row._key)) tr.classList.add("dirty");
     const number = el("td");
+    const numberBox = el("div", undefined, { className: "numberbox" });
+    const ipn = inputFor(row, "ipn");
+    ipn.value = row.ipn || "";
+    ipn.placeholder = row.id ? "Internal number" : "Automatic";
+    ipn.title = row.id
+      ? `InvenTree internal part number${row.revision ? ` · Revision ${row.revision}` : ""}`
+      : `Automatic: ${config.series.find((s) => s.id === Number(row.series))?.next || ""}`;
+    numberBox.append(ipn);
     if (row.id) {
-      number.append(
-        el("a", row.ipn || "(no number)", { href: row.url, className: "ipn" }),
-      );
-      if (row.revision)
-        number.append(el("span", `Rev ${row.revision}`, { className: "rev" }));
-    } else {
-      const ipn = el("input", undefined, {
-        value: row.ipn || "",
-        placeholder: "Automatic",
-        type: "text",
+      const link = el("a", "↗", {
+        href: row.url,
+        className: "ipn",
+        title: "Open this part in InvenTree",
       });
-      ipn.dataset.field = "ipn";
-      ipn.setAttribute("aria-label", "New part number (blank for automatic)");
-      ipn.addEventListener("input", () => mark(row, "ipn", ipn.value));
-      number.append(
-        ipn,
-        el(
-          "span",
-          config.series.find((s) => s.id === Number(row.series))?.label || "",
-          { className: "rev" },
-        ),
+      link.setAttribute(
+        "aria-label",
+        `Open ${row.ipn || row.name} in InvenTree`,
       );
+      numberBox.append(link);
     }
+    number.append(numberBox);
     tr.append(number);
+    const photo = el("td", undefined, { className: "photo" });
+    if (row.thumbnail) {
+      const button = el("button", undefined, {
+        className: "thumbnail",
+        title: `Enlarge picture of ${row.name}`,
+      });
+      button.setAttribute("aria-label", `Enlarge picture of ${row.name}`);
+      button.append(
+        el("img", undefined, {
+          src: row.thumbnail,
+          alt: row.name,
+          loading: "lazy",
+          width: 32,
+          height: 32,
+        }),
+      );
+      button.addEventListener("click", () => {
+        $("picturetitle").textContent = `${row.ipn} · ${row.name}`;
+        $("fullpicture").src = row.image;
+        $("fullpicture").alt = row.name;
+        $("picture").showModal();
+      });
+      photo.append(button);
+    } else
+      photo.append(
+        el("span", "—", { title: "No picture attached", className: "noimage" }),
+      );
+    tr.append(photo);
     fields.forEach((key) => {
       if (key === "price" && (!$("customer").value || !config.pricing.view))
         return;
@@ -244,11 +270,22 @@ function render() {
       tr.append(td);
     });
     const more = el("td");
-    const button = el("button", row.id ? "Details" : "Remove");
-    button.addEventListener("click", () =>
-      row.id ? details(row) : removeNew(row),
-    );
-    more.append(button);
+    more.className = "rowactions";
+    if (row.id) {
+      const prices = el("button", "Part Pricing", {
+        className: "pricingbutton",
+      });
+      prices.addEventListener("click", () => openPricing(row));
+      const button = el("button", "Details");
+      button.addEventListener("click", () => details(row));
+      more.append(prices, button);
+    } else {
+      const setup = el("button", row.stock ? "Stock / setup" : "Setup");
+      setup.addEventListener("click", () => openNewPart(row));
+      const remove = el("button", "Remove");
+      remove.addEventListener("click", () => removeNew(row));
+      more.append(setup, remove);
+    }
     tr.append(more);
     $("rows").append(tr);
   });
@@ -290,23 +327,50 @@ async function load() {
 }
 async function refreshConfig() {
   config = await api("bootstrap");
-  options($("series"), config.series);
+  options(
+    $("series"),
+    config.series.map((s) => ({
+      id: s.id,
+      label: `${s.label} — next ${s.next || "full"}`,
+    })),
+  );
   options($("importseries"), config.series);
   options($("category"), config.categories, "All categories");
   options($("importcategory"), config.categories, "Uncategorised");
+  options($("newcategory"), config.categories, "Uncategorised");
+  options(
+    $("newlocation"),
+    config.locations.map((l) => ({ id: l.id, name: l.pathstring || l.name })),
+    "Choose a location",
+  );
   options($("customer"), config.customers, "Choose a customer");
+  if (!$("customer").value && config.customers.length === 1) {
+    $("customer").value = config.customers[0].id;
+    $("currency").value = config.customers[0].currency || "CAD";
+  }
   options(
     $("importcustomer"),
     config.customers,
     "Keep spreadsheet prices as reference only",
   );
-  $("pricebar").hidden = !config.pricing.view;
+  $("pricecontrols").hidden = !config.pricing.view;
+  $("pricingmessage").textContent =
+    config.pricing.message +
+    (config.pricing.view && !config.customers.length
+      ? " Add a customer in InvenTree first."
+      : "");
   $("importpricelabel").hidden = !config.pricing.edit;
   $("add").hidden = !config.permissions.add;
   $("import").hidden = !(config.permissions.add && config.permissions.change);
   $("numbering").hidden = !config.admin;
-  $("sync").hidden =
-    !config.integrations["part-visibility"] || !config.permissions.change;
+  $("sync").disabled = !config.website_sync || !config.permissions.change;
+  $("sync").title = config.website_sync
+    ? "Publish the saved catalogue"
+    : "Website sync is not configured on this server";
+  $("newstock").disabled = !config.stock_add;
+  $("stockhint").textContent = config.stock_add
+    ? "The stock item’s barcode will be the OEM part number."
+    : "Stock add and location view permissions are required to add opening stock.";
   nextNumber();
 }
 function nextNumber() {
@@ -322,6 +386,7 @@ function addRow(focus = true) {
   const row = {
     _key: `new-${crypto.randomUUID()}`,
     name: "",
+    description: "",
     ipn: "",
     cells: {},
     active: false,
@@ -338,10 +403,68 @@ function addRow(focus = true) {
   if (focus) row._node.querySelector("[data-field=name]").focus();
   return row;
 }
+let editingNew = null;
+function openNewPart(row = null) {
+  if (busy || uncertain || loading) return;
+  editingNew = row;
+  $("newtitle").textContent = row ? "Part and opening stock" : "Add a part";
+  $("newoem").value = row?.name || "";
+  $("newdescription").value = row?.description || "";
+  $("newcategory").value = row?.category_id || $("category").value || "";
+  $("newvisible").checked = row?.active || false;
+  $("newstock").checked = !!row?.stock;
+  $("newquantity").value = row?.stock?.quantity || "";
+  $("newlocation").value = row?.stock?.location || "";
+  $("newipn").value = row?.ipn || "";
+  if (row) $("series").value = row.series;
+  nextNumber();
+  stockFields();
+  $("newpart").showModal();
+  $("newoem").focus();
+}
+function stockFields() {
+  const enabled = $("newstock").checked && config.stock_add;
+  $("stockfields").hidden = !enabled;
+  $("newquantity").required = enabled;
+  $("newlocation").required = enabled;
+}
+$("newstock").addEventListener("change", stockFields);
+$("newpartform").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const row = editingNew || addRow(false);
+  if (!row) return;
+  row.series = Number($("series").value);
+  for (const [field, value] of Object.entries({
+    name: $("newoem").value.trim(),
+    description: $("newdescription").value,
+    category_id: Number($("newcategory").value) || null,
+    active: $("newvisible").checked,
+    ipn: $("newipn").value.trim(),
+  }))
+    mark(row, field, value);
+  const patch = dirty.get(row._key);
+  if ($("newstock").checked && config.stock_add) {
+    row.stock = patch.stock = {
+      quantity: $("newquantity").value,
+      location: Number($("newlocation").value),
+    };
+  } else {
+    delete row.stock;
+    delete patch.stock;
+  }
+  $("newpart").close();
+  render();
+  row._node.scrollIntoView({ block: "nearest" });
+  message(
+    "Row added. Choose Save changes to create the part" +
+      (row.stock ? " and opening stock." : "."),
+  );
+});
 async function save() {
   if (!dirty.size || busy) return;
   busy = true;
   if ($("details").open) $("details").close();
+  if ($("newpart").open) $("newpart").close();
   changed();
   document
     .querySelectorAll("#sheet input,#sheet select")
@@ -357,7 +480,9 @@ async function save() {
     syncPending = true;
     await refreshConfig();
     await load();
-    message("Changes saved. New rows are now InvenTree parts.");
+    message(
+      "Changes saved. Parts, prices and any opening stock are now in InvenTree.",
+    );
   } catch (error) {
     uncertain = dirty.size > 0 && (!error.status || error.status >= 500);
     message(
@@ -375,7 +500,7 @@ async function sync() {
   try {
     const data = new FormData();
     data.set("csrfmiddlewaretoken", csrf());
-    const result = await request("/plugin/part-visibility/sync/", data);
+    const result = await request(`${BASE}api/sync/`, data);
     syncPending = false;
     message(result.message || "Website sync queued.");
   } catch (e) {
@@ -383,12 +508,12 @@ async function sync() {
   }
 }
 function onLeave() {
-  if (!syncPending || !config?.integrations["part-visibility"]) return;
+  if (!syncPending || !config?.website_sync || !config.permissions.change)
+    return;
   const data = new FormData();
   data.set("csrfmiddlewaretoken", csrf());
   data.set("reason", "page-leave");
-  if (navigator.sendBeacon("/plugin/part-visibility/sync/", data))
-    syncPending = false;
+  if (navigator.sendBeacon(`${BASE}api/sync/`, data)) syncPending = false;
 }
 async function details(row) {
   $("detailtitle").textContent = `${row.ipn || "Part"} · ${row.name}`;
@@ -441,7 +566,79 @@ async function details(row) {
     );
   }
   body.append(el("a", "Open this part in InvenTree", { href: row.url }));
+  if (row.cells.oem_number && row.cells.oem_number !== row.name) {
+    body.append(el("p", `Imported OEM reference: ${row.cells.oem_number}`));
+    if (config.permissions.change) {
+      const use = el("button", "Use imported OEM PN");
+      use.addEventListener("click", () => {
+        if (!row.description) mark(row, "description", row.name);
+        mark(row, "name", row.cells.oem_number);
+        $("details").close();
+        render();
+        message(
+          "OEM PN updated in the sheet. Save changes to update the InvenTree name.",
+        );
+      });
+      body.append(use);
+    }
+  }
   $("details").showModal();
+}
+async function editPriceInSheet(row, customer, quantity) {
+  if (!guard()) {
+    $("pricingdialog").close();
+    return;
+  }
+  $("customer").value = customer;
+  $("quantity").value = quantity;
+  const company = config.customers.find((c) => c.id === Number(customer));
+  if (company?.currency) $("currency").value = company.currency;
+  $("pricingdialog").close();
+  await load();
+  rows
+    .find((r) => r.id === row.id)
+    ?._node.querySelector('[data-field="price"]')
+    ?.focus();
+  message("Enter the customer price in this row, then choose Save changes.");
+}
+async function openPricing(row) {
+  $("pricingtitle").textContent = `Part Pricing · ${row.ipn || row.name}`;
+  const body = $("pricingbody");
+  body.replaceChildren(el("p", config.pricing.message));
+  body.append(
+    el("a", "Open full Part Pricing on the InvenTree part", { href: row.url }),
+  );
+  $("pricingdialog").showModal();
+  if (config.pricing.view && config.customers.length) {
+    const form = el("form", undefined, { className: "pricepicker" });
+    const customerLabel = el("label", "Customer");
+    const customer = el("select", undefined, { required: true });
+    options(customer, config.customers, "Choose a customer");
+    customer.value = $("customer").value;
+    const qtyLabel = el("label", "Quantity break");
+    const qty = el("input", undefined, {
+      type: "number",
+      min: "1",
+      step: "any",
+      value: $("quantity").value,
+      required: true,
+    });
+    customerLabel.append(customer);
+    qtyLabel.append(qty);
+    form.append(
+      customerLabel,
+      qtyLabel,
+      el("button", config.pricing.edit ? "Edit in sheet" : "View in sheet", {
+        type: "submit",
+        className: "primary",
+      }),
+    );
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      safeRun(() => editPriceInSheet(row, customer.value, qty.value))();
+    });
+    body.append(form);
+  }
   if (config.pricing.view || config.pricing.costs) {
     const area = el("div");
     body.append(area);
@@ -449,6 +646,13 @@ async function details(row) {
     try {
       const data = await request(`/plugin/customer-pricing/part/${row.id}/`);
       area.replaceChildren(el("h3", "Part Pricing"));
+      if (config.pricing.view && !data.customer_lists?.length)
+        area.append(
+          el(
+            "p",
+            "No customer prices yet. Choose a customer above to add the first price.",
+          ),
+        );
       (data.customer_lists || []).forEach((list) => {
         area.append(
           el(
@@ -463,6 +667,23 @@ async function details(row) {
             el("td", `Qty ${t.quantity}+`),
             el("td", `${t.price} ${list.currency}`),
           );
+          if (
+            config.pricing.view &&
+            list.active &&
+            config.customers.some((c) => c.id === Number(list.customer))
+          ) {
+            const cell = el("td");
+            const edit = el(
+              "button",
+              config.pricing.edit ? "Edit in sheet" : "View in sheet",
+            );
+            edit.addEventListener(
+              "click",
+              safeRun(() => editPriceInSheet(row, list.customer, t.quantity)),
+            );
+            cell.append(edit);
+            tr.append(cell);
+          }
           table.append(tr);
         });
         area.append(table);
@@ -478,7 +699,7 @@ async function details(row) {
       area.append(
         el(
           "p",
-          "Choose a customer and quantity break above the sheet to edit prices. For materials, margins and all pricing options, open this part’s Part Pricing tab in InvenTree.",
+          "Other customers and quantity breaks stay unchanged. Materials, margins and all pricing options are available in this part’s Part Pricing tab in InvenTree.",
         ),
       );
     } catch (e) {
@@ -591,7 +812,7 @@ function safeRun(fn) {
       .catch((e) => message(e.message, true));
 }
 $("add").addEventListener("click", () => {
-  if (!busy) addRow();
+  openNewPart();
 });
 $("save").addEventListener("click", save);
 $("discard").addEventListener(
@@ -607,7 +828,14 @@ $("reload").addEventListener(
   "click",
   safeRun(() => guard() && load()),
 );
-for (const id of ["category", "active", "sort", "customer", "quantity"]) {
+for (const id of [
+  "category",
+  "active",
+  "sort",
+  "customer",
+  "quantity",
+  "pagesize",
+]) {
   let previous;
   $(id).addEventListener("focus", () => (previous = $(id).value));
   $(id).addEventListener(
@@ -623,6 +851,11 @@ for (const id of ["category", "active", "sort", "customer", "quantity"]) {
       }
       page = 1;
       await load();
+      if (id === "pagesize") {
+        try {
+          localStorage.setItem("parts-sheet-page-size", $(id).value);
+        } catch {}
+      }
       previous = $(id).value;
     }),
   );
@@ -756,9 +989,12 @@ window.addEventListener("beforeunload", (event) => {
 });
 window.addEventListener("pagehide", onLeave);
 try {
+  try {
+    const size = localStorage.getItem("parts-sheet-page-size");
+    if (["25", "50", "100", "200"].includes(size)) $("pagesize").value = size;
+  } catch {}
   await refreshConfig();
   const links = {
-    "part-visibility": ["Website Parts", "/plugin/part-visibility/"],
     "inventory-manager": ["Reporting", "/plugin/inventory-manager/"],
   };
   Object.entries(links).forEach(([slug, [name, url]]) => {

@@ -211,8 +211,9 @@ th:first-child {
   z-index: 4;
   background: #eaf0f6;
 }
-td:nth-child(2) {
-  min-width: 255px;
+td:nth-child(3),
+td:nth-child(4) {
+  min-width: 180px;
 }
 td input:not([type="checkbox"]),
 td select {
@@ -329,6 +330,88 @@ fieldset {
   grid-template-columns: 1fr 1fr;
   gap: 0 16px;
 }
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+.pricecontrols,
+.pricepicker {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.pricepicker {
+  margin-top: 14px;
+}
+.pagesize {
+  flex-direction: row;
+  align-items: center;
+}
+.numberbox {
+  display: flex;
+  align-items: center;
+}
+#sheet .numberbox input {
+  min-width: 116px;
+  padding: 6px 3px;
+}
+.numberbox a {
+  padding: 8px 3px;
+}
+#sheet .photo {
+  min-width: 48px;
+  width: 48px;
+  text-align: center;
+}
+#sheet .thumbnail {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  margin: 3px;
+  border: 0;
+  min-height: 32px;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+.thumbnail img {
+  object-fit: contain;
+  border-radius: 3px;
+}
+.noimage {
+  color: #a6b1bf;
+}
+.rowactions {
+  white-space: nowrap;
+}
+#sheet .pricingbutton {
+  color: #1769ac;
+}
+#fullpicture {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  margin: auto;
+}
+#newpart {
+  max-width: 720px;
+}
+.manualnumber {
+  margin-top: 18px;
+}
+.manualnumber summary {
+  cursor: pointer;
+  color: #486079;
+}
+#pricingbody td {
+  padding: 5px 9px;
+}
+#pricingbody table {
+  margin-bottom: 18px;
+}
 #detailbody textarea {
   min-height: 80px;
 }
@@ -393,6 +476,9 @@ a:focus-visible {
     flex: 1;
   }
   #detailbody .fields {
+    grid-template-columns: 1fr;
+  }
+  .fields {
     grid-template-columns: 1fr;
   }
 }

@@ -12,6 +12,7 @@ INSTALLED_APPS = [
     "djmoney.contrib.exchange",
     "part",
     "company",
+    "stock",
     "parts_sheet",
     "inventree_customer_pricing",
 ]
@@ -26,6 +27,7 @@ DATABASES = {
 MIGRATION_MODULES = {
     "part": None,
     "company": None,
+    "stock": None,
     "parts_sheet": None,
     "inventree_customer_pricing": None,
 }

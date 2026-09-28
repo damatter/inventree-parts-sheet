@@ -1,34 +1,300 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Parts Sheet · InvenTree</title><link rel="stylesheet" href="/plugin/parts-sheet/assets/sheet.css?v={{ version }}"></head>
-<body><div id="app">
-<header><a class="back" href="/web/">← InvenTree</a><div class="heading"><div><h1>Parts Sheet</h1><p>Your entire catalogue, one row per part.</p></div><nav id="integrations"></nav></div></header>
-<section class="toolbar"><label class="search">Find a part<input id="search" type="search" placeholder="Part number, name or description"></label>
-<label>Category<select id="category"><option value="">All categories</option></select></label>
-<label>Status<select id="active"><option value="">All parts</option><option value="true">Active</option><option value="false">Inactive</option></select></label>
-<label>Sort<select id="sort"><option value="IPN">Part number ↑</option><option value="-IPN">Part number ↓</option><option value="name">Name A–Z</option><option value="-pk">Newest first</option></select></label>
-<button id="reload">Refresh</button></section>
-<section class="pricebar" id="pricebar" hidden><label>Customer prices<select id="customer"><option value="">Choose a customer</option></select></label>
-<label>Quantity break<input id="quantity" type="number" min="1" step="1" value="1"></label><label>Currency for new lists<input id="currency" value="CAD" maxlength="3"></label>
-<span>Edit the exact quantity break shown. Other price breaks stay as they are.</span></section>
-<section class="actions"><label>New part series<select id="series"></select></label><span id="next"></span><button id="add" class="primary">＋ Add part</button><button id="save" class="primary" disabled>Save changes</button><button id="discard" disabled>Discard edits</button><div class="spacer"></div><button id="numbering">Numbering</button><button id="import">Import spreadsheet</button><button id="export">Export CSV</button></section>
-<div id="message" role="status" aria-live="polite">Loading catalogue…</div>
-<p class="hint">Click a cell to edit. Tab moves across; Enter moves down. Paste a block of cells. Ctrl+S saves. Part numbers open the InvenTree listing. New parts start inactive.</p>
-<div class="tablewrap"><table id="sheet"><thead><tr><th class="number">Part number</th><th class="name">Part description</th><th>Active</th><th>Category</th><th>OEM / Burt #</th><th>Make / model</th><th>Material spec</th><th>Size / ratio / teeth</th><th class="pricecol" hidden>Customer price</th><th>More</th></tr></thead><tbody id="rows"></tbody></table></div>
-<footer><span id="count"></span><button id="prev">← Previous</button><span id="page"></span><button id="nextpage">Next →</button><span class="spacer"></span><button id="sync" hidden>Sync to website</button></footer>
-</div>
-<dialog id="details"><form method="dialog" class="dialoghead"><h2 id="detailtitle">Part details</h2><button aria-label="Close">×</button></form><div id="detailbody"></div></dialog>
-<dialog id="importdialog"><form method="dialog" class="dialoghead"><h2>Bring your spreadsheet into InvenTree</h2><button aria-label="Close">×</button></form>
-<p>Match existing parts by their part number. Create missing parts. Existing part names, categories, Active status and prices are preserved.</p>
-<label>Spreadsheet<input id="file" type="file" accept=".xls,.xlsx,.csv"></label><button id="preview" class="primary">Preview import</button>
-<div id="importmessage" role="status"></div><div id="previewrows" class="preview"></div>
-<fieldset id="importoptions" hidden><legend>For new parts</legend><label>Category<select id="importcategory"></select></label><label><input type="checkbox" id="importactive"> Make new parts active (eligible for website sync)</label>
-<label><input type="checkbox" id="unnumbered"> Assign numbers to rows that have no part number</label><label>Number series<select id="importseries"></select></label>
-<label id="importpricelabel">Optional: copy DC Sell (CAD) into this customer's quantity-1 pricing<select id="importcustomer"><option value="">Keep spreadsheet prices as reference only</option></select></label>
-<p>OEM and supplier prices remain reference cells with their original text and currency. Existing customer prices are kept.</p>
-<button id="confirmimport" class="primary">Import reviewed rows</button></fieldset></dialog>
-<dialog id="numberdialog"><form method="dialog" class="dialoghead"><h2>Part numbering</h2><button aria-label="Close">×</button></form><div id="serieslist"></div>
-<p>The last number never moves backwards. Numbers already in the catalogue are checked automatically.</p>
-<form id="seriesform"><label>Prefix<input name="prefix" required maxlength="40" placeholder="1008"></label><label>Series label<input name="label" required placeholder="1008 series"></label><label>Number of digits after prefix<input name="digits" type="number" min="1" max="9" value="3" required></label><label>Last full number used<input name="last" required placeholder="1008272"></label><button class="primary">Save series</button></form><p id="seriesmessage" role="status"></p></dialog>
-<form hidden>{% csrf_token %}</form>
-<script type="module" src="/plugin/parts-sheet/assets/sheet.js?v={{ version }}"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Parts Sheet · InvenTree</title>
+    <link
+      rel="stylesheet"
+      href="/plugin/parts-sheet/assets/sheet.css?v={{ version }}"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <a class="back" href="/web/">← InvenTree</a>
+        <div class="heading">
+          <div>
+            <h1>Parts Sheet</h1>
+            <p>Your entire catalogue, one row per part.</p>
+          </div>
+          <nav id="integrations"></nav>
+        </div>
+      </header>
+      <section class="toolbar">
+        <label class="search"
+          >Find a part<input
+            id="search"
+            type="search"
+            placeholder="Part number, name or description"
+        /></label>
+        <label
+          >Category<select id="category">
+            <option value="">All categories</option>
+          </select></label
+        >
+        <label
+          >Visibility<select id="active">
+            <option value="">All parts</option>
+            <option value="true">Visible</option>
+            <option value="false">Hidden</option>
+          </select></label
+        >
+        <label
+          >Sort<select id="sort">
+            <option value="IPN">DiCor number ↑</option>
+            <option value="-IPN">DiCor number ↓</option>
+            <option value="name">OEM PN A–Z</option>
+            <option value="-pk">Newest first</option>
+          </select></label
+        >
+        <button id="reload">Refresh</button>
+      </section>
+      <section class="pricebar" id="pricebar">
+        <strong>Part Pricing</strong>
+        <div id="pricecontrols" class="pricecontrols">
+          <label
+            >Customer prices<select id="customer">
+              <option value="">Choose a customer</option>
+            </select></label
+          >
+          <label
+            >Quantity break<input
+              id="quantity"
+              type="number"
+              min="1"
+              step="1"
+              value="1" /></label
+          ><label
+            >Currency for new lists<input
+              id="currency"
+              value="CAD"
+              maxlength="3"
+          /></label>
+        </div>
+        <span id="pricingmessage"></span>
+      </section>
+      <section class="actions">
+        <button id="add" class="primary">＋ Add part</button
+        ><button id="save" class="primary" disabled>Save changes</button
+        ><button id="discard" disabled>Discard edits</button>
+        <div class="spacer"></div>
+        <button id="numbering">Numbering</button
+        ><button id="import">Import spreadsheet</button
+        ><button id="export">Export CSV</button>
+      </section>
+      <div id="message" role="status" aria-live="polite">
+        Loading catalogue…
+      </div>
+      <p class="hint">
+        OEM PN is the InvenTree part name. DiCor number is its internal part
+        number. Click cells to edit; Ctrl+S saves. Click a picture to enlarge
+        it. New parts start hidden.
+      </p>
+      <div class="tablewrap">
+        <table id="sheet">
+          <thead>
+            <tr>
+              <th class="number">DiCor Part Number</th>
+              <th class="photo">Photo</th>
+              <th class="name">OEM PN</th>
+              <th>Part description</th>
+              <th>Visible</th>
+              <th>Category</th>
+              <th>Make / model</th>
+              <th>Material spec</th>
+              <th>Size / ratio / teeth</th>
+              <th class="pricecol" hidden>Customer price</th>
+              <th>Part Pricing / Details</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <footer>
+        <span id="count"></span><button id="prev">← Previous</button
+        ><span id="page"></span><button id="nextpage">Next →</button
+        ><label class="pagesize"
+          >Parts per page<select id="pagesize">
+            <option>25</option>
+            <option selected>50</option>
+            <option>100</option>
+            <option>200</option>
+          </select></label
+        ><span class="spacer"></span><button id="sync">Sync to website</button>
+      </footer>
+    </div>
+    <dialog id="newpart">
+      <form method="dialog" class="dialoghead">
+        <h2 id="newtitle">Add a part</h2>
+        <button aria-label="Close">×</button>
+      </form>
+      <form id="newpartform">
+        <div class="fields">
+          <label
+            >OEM part number<input
+              id="newoem"
+              required
+              maxlength="100"
+              placeholder="Manufacturer’s part number"
+              autocomplete="off" /></label
+          ><label
+            >Part description<input
+              id="newdescription"
+              maxlength="250"
+              placeholder="What is this part?"
+          /></label>
+          <label
+            >Internal number series<select id="series" required></select
+            ><span id="next"></span></label
+          ><label>Category<select id="newcategory"></select></label>
+        </div>
+        <label
+          ><input id="newvisible" type="checkbox" /> Visible in the
+          catalogue</label
+        >
+        <fieldset>
+          <legend>Opening stock (optional)</legend>
+          <label
+            ><input id="newstock" type="checkbox" /> Add a quantity in
+            stock</label
+          >
+          <div id="stockfields" class="fields" hidden>
+            <label
+              >Quantity<input
+                id="newquantity"
+                type="number"
+                min="0.00001"
+                step="0.00001"
+                inputmode="decimal" /></label
+            ><label>Location<select id="newlocation"></select></label>
+          </div>
+          <p id="stockhint" class="hint">
+            The stock item’s barcode will be the OEM part number.
+          </p>
+        </fieldset>
+        <details class="manualnumber">
+          <summary>Use a specific internal number instead</summary>
+          <label
+            >DiCor Part Number<input
+              id="newipn"
+              placeholder="Leave blank for automatic numbering"
+              maxlength="100"
+          /></label>
+        </details>
+        <p>
+          Choose <strong>Save changes</strong> on the sheet to create the part
+          and any opening stock together.
+        </p>
+        <button class="primary" type="submit">Add to sheet</button>
+      </form>
+    </dialog>
+    <dialog id="picture">
+      <form method="dialog" class="dialoghead">
+        <h2 id="picturetitle">Part picture</h2>
+        <button aria-label="Close">×</button>
+      </form>
+      <img id="fullpicture" alt="" />
+    </dialog>
+    <dialog id="pricingdialog">
+      <form method="dialog" class="dialoghead">
+        <h2 id="pricingtitle">Part Pricing</h2>
+        <button aria-label="Close">×</button>
+      </form>
+      <div id="pricingbody"></div>
+    </dialog>
+    <dialog id="details">
+      <form method="dialog" class="dialoghead">
+        <h2 id="detailtitle">Part details</h2>
+        <button aria-label="Close">×</button>
+      </form>
+      <div id="detailbody"></div>
+    </dialog>
+    <dialog id="importdialog">
+      <form method="dialog" class="dialoghead">
+        <h2>Bring your spreadsheet into InvenTree</h2>
+        <button aria-label="Close">×</button>
+      </form>
+      <p>
+        Match existing parts by their internal part number. OEM PN becomes the
+        name of each new part; the description stays separate. Existing names,
+        categories, visibility and prices are preserved.
+      </p>
+      <label
+        >Spreadsheet<input
+          id="file"
+          type="file"
+          accept=".xls,.xlsx,.csv" /></label
+      ><button id="preview" class="primary">Preview import</button>
+      <div id="importmessage" role="status"></div>
+      <div id="previewrows" class="preview"></div>
+      <fieldset id="importoptions" hidden>
+        <legend>For new parts</legend>
+        <label>Category<select id="importcategory"></select></label
+        ><label
+          ><input type="checkbox" id="importactive" /> Make new parts visible
+          (eligible for website sync)</label
+        >
+        <label
+          ><input type="checkbox" id="unnumbered" /> Assign numbers to rows that
+          have no part number</label
+        ><label>Number series<select id="importseries"></select></label>
+        <label id="importpricelabel"
+          >Optional: copy DC Sell (CAD) into this customer's quantity-1
+          pricing<select id="importcustomer">
+            <option value="">Keep spreadsheet prices as reference only</option>
+          </select></label
+        >
+        <p>
+          OEM and supplier prices remain reference cells with their original
+          text and currency. Existing customer prices are kept.
+        </p>
+        <button id="confirmimport" class="primary">Import reviewed rows</button>
+      </fieldset>
+    </dialog>
+    <dialog id="numberdialog">
+      <form method="dialog" class="dialoghead">
+        <h2>Part numbering</h2>
+        <button aria-label="Close">×</button>
+      </form>
+      <div id="serieslist"></div>
+      <p>
+        The last number never moves backwards. Numbers already in the catalogue
+        are checked automatically.
+      </p>
+      <form id="seriesform">
+        <label
+          >Prefix<input
+            name="prefix"
+            required
+            maxlength="40"
+            placeholder="1008" /></label
+        ><label
+          >Series label<input
+            name="label"
+            required
+            placeholder="1008 series" /></label
+        ><label
+          >Number of digits after prefix<input
+            name="digits"
+            type="number"
+            min="1"
+            max="9"
+            value="3"
+            required /></label
+        ><label
+          >Last full number used<input
+            name="last"
+            required
+            placeholder="1008272" /></label
+        ><button class="primary">Save series</button>
+      </form>
+      <p id="seriesmessage" role="status"></p>
+    </dialog>
+    <form hidden>{% csrf_token %}</form>
+    <script
+      type="module"
+      src="/plugin/parts-sheet/assets/sheet.js?v={{ version }}"
+    ></script>
+  </body>
+</html>

@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inventree-parts-sheet"
-version = "0.1.0"
+version = "0.2.0"
 description = "Spreadsheet-style catalogue, safe part numbering, and Customer Pricing for InvenTree"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{name = "Matt Dick"}]
-dependencies = ["xlrd>=2.0.2,<3", "openpyxl>=3.1.5,<4"]
+dependencies = ["xlrd>=2.0.2,<3", "openpyxl>=3.1.5,<4", "boto3>=1.34,<2"]
 
 [project.urls]
 Homepage = "https://github.com/damatter/inventree-parts-sheet"

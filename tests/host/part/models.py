@@ -29,6 +29,13 @@ class Part(models.Model):
     component = models.BooleanField(default=True)
     purchaseable = models.BooleanField(default=True)
     salable = models.BooleanField(default=True)
+    image = models.CharField(max_length=250, blank=True, default="")
+
+    def get_thumbnail_url(self):
+        return self.image
+
+    def get_image_url(self):
+        return self.image
 
     def clean(self):
         if self.category_id and self.category.structural:
