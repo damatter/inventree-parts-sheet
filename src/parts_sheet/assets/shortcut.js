@@ -1,7 +1,9 @@
 export function openPartsSheet() {
   window.location.assign("/plugin/parts-sheet/");
 }
-export function renderPartsSheet(target) {
+// InvenTree 1.3 uses the two-argument signature for DOM-based widgets.
+// A one-argument function is called as a React renderer with a context object.
+export function renderPartsSheet(target, context) {
   if (!target) return;
   const link = document.createElement("a");
   link.href = "/plugin/parts-sheet/";

@@ -36,14 +36,17 @@ def import_rows(user, payload):
             raise ValidationError("Active must be true or false.")
         selected = next((s for s in series if s.pk == int(payload.get("series") or 0)), None)
         for s in series:
-            s.last_value = max(s.last_value, int(preview.counters.get(s.prefix, 0)))
-            s.save(update_fields=["last_value"])
+            s.reserved_through = max(s.reserved_through, int(preview.counters.get(s.prefix, 0)))
+            s.save(update_fields=["reserved_through"])
         for row in rows:
             observe(row["ipn"], series)
         counts = {"created": 0, "matched": 0, "skipped": 0, "prices_added": 0, "prices_kept": 0}
         for row in rows:
             fingerprint = digest(row["source"] + "\n" + row["name"])
             link = ImportLink.objects.filter(pk=fingerprint).first() if not row["ipn"] else None
+            if link and link.part_id is None:
+                counts["skipped"] += 1
+                continue
             if row["status"] == "unnumbered" and not link and not payload.get("include_unnumbered"):
                 counts["skipped"] += 1
                 continue

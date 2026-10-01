@@ -19,6 +19,38 @@ def require_stock(user):
         raise PermissionDenied("Stock add and location view permissions are required.")
 
 
+def can_view_locations(user):
+    return bool(check_user_permission(user, StockLocation, "view"))
+
+
+def validate_default_location(user, location_id):
+    if not can_view_locations(user):
+        raise PermissionDenied("Stock location view permission is required.")
+    if (
+        location_id is not None
+        and not StockLocation.objects.filter(pk=location_id, structural=False).exists()
+    ):
+        raise ValidationError("Choose a stock location that can hold parts.")
+
+
+def location_options():
+    locations = list(StockLocation.objects.values("id", "name", "parent_id", "structural"))
+    by_id = {row["id"]: row for row in locations}
+
+    def full_path(row):
+        names, seen = [], set()
+        while row and row["id"] not in seen:
+            names.append(row["name"])
+            seen.add(row["id"])
+            row = by_id.get(row["parent_id"])
+        return " / ".join(reversed(names))
+
+    return sorted(
+        [{**row, "pathstring": full_path(row)} for row in locations if not row["structural"]],
+        key=lambda row: row["pathstring"].casefold(),
+    )
+
+
 def create_opening_stock(user, part, values):
     require_stock(user)
     if not isinstance(values, dict):

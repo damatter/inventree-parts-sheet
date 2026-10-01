@@ -1,4 +1,4 @@
-"""Allocate only within the chosen series; retain high-water marks forever."""
+"""Allocate sequentially; reclaim only the latest number when its part is deleted."""
 
 import re
 
@@ -18,14 +18,33 @@ def lock_series():
     return list(NumberSeries.objects.select_for_update().order_by("pk"))
 
 
-def high_water(series):
+def catalogue_high_water(series):
     pattern = re.compile(re.escape(series.prefix) + rf"([0-9]{{{series.digits}}})\Z")
-    highest = series.last_value
+    highest = series.reserved_through
     for ipn in Part.objects.filter(IPN__startswith=series.prefix).values_list("IPN", flat=True):
         match = pattern.fullmatch(ipn or "")
         if match:
             highest = max(highest, int(match[1]))
     return highest
+
+
+def high_water(series):
+    return max(series.last_value, catalogue_high_water(series))
+
+
+def reclaim_deleted_number(sender, instance, using, **kwargs):
+    # A sender-independent receiver survives InvenTree's plugin model reloads.
+    # Django emits pre_delete inside its deletion transaction, so a later
+    # deletion failure also rolls back this counter change.
+    if sender._meta.label_lower != "part.part":
+        return
+    for series in lock_series():
+        match = re.fullmatch(
+            re.escape(series.prefix) + rf"([0-9]{{{series.digits}}})", instance.IPN or ""
+        )
+        if match and int(match[1]) == high_water(series):
+            series.last_value = max(series.reserved_through, int(match[1]) - 1)
+            series.save(update_fields=["last_value"])
 
 
 def allocate(series):
@@ -56,6 +75,7 @@ def snapshot(series):
         "label": series.label,
         "prefix": series.prefix,
         "digits": series.digits,
+        "reserved_through": series.prefix + str(series.reserved_through).zfill(series.digits),
         "last": series.prefix + str(highest).zfill(series.digits),
         "next": None if exhausted else series.prefix + str(highest + 1).zfill(series.digits),
     }

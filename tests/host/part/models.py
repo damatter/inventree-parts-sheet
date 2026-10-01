@@ -30,6 +30,17 @@ class Part(models.Model):
     purchaseable = models.BooleanField(default=True)
     salable = models.BooleanField(default=True)
     image = models.CharField(max_length=250, blank=True, default="")
+    default_location = models.ForeignKey(
+        "stock.StockLocation", null=True, blank=True, on_delete=models.SET_NULL
+    )
+    locked = models.BooleanField(default=False)
+
+    def delete(self, **kwargs):
+        if self.locked:
+            raise ValidationError("Cannot delete this part as it is locked")
+        if self.active:
+            raise ValidationError("Cannot delete this part as it is still active")
+        return super().delete(**kwargs)
 
     def get_thumbnail_url(self):
         return self.image

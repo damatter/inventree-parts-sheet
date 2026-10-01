@@ -192,6 +192,54 @@ th {
   border-bottom: 1px solid #c8d3df;
   white-space: nowrap;
 }
+th .columnsort {
+  display: block;
+  border: 0;
+  background: transparent;
+  font-weight: 600;
+  padding: 0 0 7px;
+  min-height: 26px;
+  color: inherit;
+}
+th input, th select {
+  display: block;
+  width: 100%;
+  min-width: 80px;
+  max-width: 220px;
+  min-height: 30px;
+  height: 30px;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+th[data-column="price"] input {
+  display: inline-block;
+  width: 70px;
+  min-width: 60px;
+}
+.locationpicker {
+  white-space: normal;
+  text-align: left;
+  width: 100%;
+  font-weight: normal;
+}
+#sheet .locationpicker {
+  min-width: 200px;
+  max-width: 280px;
+  width: 240px;
+  height: 37px;
+  min-height: 37px;
+  margin: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#locationdialog {max-width: 720px;}
+#locationresults {max-height: 48vh; overflow:auto; display:grid; gap:6px; margin:12px 0;}
+#locationresults button {text-align:left; white-space:normal;}
+.danger, #sheet .deletebutton {color:#a32424;}
+#deletedialog {max-width:560px;}
+#deletemessage {color:#a32424;}
 td {
   border-bottom: 1px solid #e0e6ee;
   border-right: 1px solid #edf0f5;
@@ -389,6 +437,18 @@ fieldset {
 .rowactions {
   white-space: nowrap;
 }
+#sheet .rowactions, #sheet th:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff;
+  border-left: 1px solid #cdd7e3;
+}
+#sheet th:last-child {z-index:4; background:#eaf0f6;}
+#sheet tr.dirty .rowactions {background:#fff9df;}
+#newpartform label {margin:8px 0;}
+#newpartform fieldset {padding:10px 14px; margin-top:10px;}
+#newpartform .hint {margin:6px 0;}
 #sheet .pricingbutton {
   color: #1769ac;
 }

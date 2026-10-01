@@ -10,6 +10,7 @@ class StockLocation(models.Model):
     name = models.CharField(max_length=100)
     pathstring = models.CharField(max_length=255, default="")
     structural = models.BooleanField(default=False)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE)
 
 
 class StockItem(models.Model):

@@ -9,6 +9,7 @@ class NumberSeries(models.Model):
     label = models.CharField(max_length=100)
     digits = models.PositiveSmallIntegerField(default=3)
     last_value = models.PositiveBigIntegerField(default=0)
+    reserved_through = models.PositiveBigIntegerField(default=0)
 
     class Meta:
         ordering = ["prefix"]
@@ -46,4 +47,4 @@ class ImportPreview(models.Model):
 
 class ImportLink(models.Model):
     fingerprint = models.CharField(max_length=64, primary_key=True)
-    part = models.ForeignKey("part.Part", on_delete=models.PROTECT)
+    part = models.ForeignKey("part.Part", null=True, on_delete=models.SET_NULL)

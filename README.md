@@ -3,7 +3,7 @@
 A familiar editable sheet for the entire native InvenTree catalogue, with automatic
 internal numbers, customer pricing, compact pictures and optional opening stock.
 
-## Install or update to 0.2.0
+## Install or update to 0.3.0
 
 Supported host: **InvenTree 1.3.2–1.3.x**, validated on the official **1.3.5** image.
 Customer Pricing integration targets `damatter/inventree-customer-pricing` **0.6.1**.
@@ -11,7 +11,7 @@ Customer Pricing integration targets `damatter/inventree-customer-pricing` **0.6
 In the InvenTree plugin installer:
 
 - Package name: `inventree-parts-sheet`
-- Source URL: `git+https://github.com/damatter/inventree-parts-sheet.git@0.2.0`
+- Source URL: `git+https://github.com/damatter/inventree-parts-sheet.git@0.3.0`
 - Version: leave blank
 
 Enable **Parts Sheet**, **App integration**, **URL integration** and **User interface
@@ -35,6 +35,7 @@ search command, or add its dashboard tile. Browser assets are served directly.
 | Part description | Description (`Part.description`) |
 | Visible | Active flag (`Part.active`) |
 | Photo | Existing part image and thumbnail |
+| Default stock location | Native default location, displayed with its full path |
 
 Both number columns are editable. Saves update the native part immediately;
 refreshing reads changes made elsewhere in InvenTree. The arrow beside the DiCor
@@ -53,13 +54,17 @@ old name as the description when the description is empty. Review and save.
 
 - Click cells, type or paste, then choose **Save changes** / **Ctrl+S**.
 - Tab moves across; Enter moves down. Yellow rows have unsaved changes.
-- Search or filter by category and visibility. Choose **25, 50, 100 or 200 parts
+- Filter under each column heading; click a heading for ascending/descending
+  sorting across the whole catalogue. Customer prices have minimum/maximum
+  filters and sort numerically at the selected customer and quantity break.
+  Choose **25, 50, 100 or 200 parts
   per page**; the browser remembers this preference.
-- Small thumbnails keep rows compact. Click one to see the full picture.
+- Small thumbnails keep rows compact. Click one to see or replace the picture;
+  use **+** in an empty photo cell to add one.
 - Open **Part Pricing** directly on any saved row. Use **Details** for additional
   fields and manufacturing/assembly flags.
 
-Up to 200 rows can be saved together. Saves are atomic. Unsaved edits prevent view
+Up to 200 rows can be saved together. Part, stock and price saves are atomic. Unsaved edits prevent view
 changes; Discard reloads saved data. If the server response is lost, **Retry save**
 reuses the same request, so it cannot duplicate the part or opening stock.
 
@@ -71,9 +76,13 @@ reuses the same request, so it cannot duplicate the part or opening stock.
 3. Choose the category and whether the part should be **Visible**. New parts
    default hidden. A specific internal number can be entered under the optional
    override; otherwise numbering is automatic.
-4. If stock is already on hand, select **Add a quantity in stock**, enter the
-   positive quantity and choose a location. Otherwise leave it unchecked.
-5. Click **Add to sheet**, review the row, then **Save changes**. A new row's
+4. Choose a **default stock location**. Search any words from the building,
+   aisle, shelf or bin; each result shows the full path. If stock is already on
+   hand, select **Add a quantity in stock** and enter the quantity for this location.
+5. Optionally choose a **picture** and enter a **customer unit price**. Use
+   **New customer**, enter a name and keep CAD (or change currency), then create
+   the customer. Existing company names are rejected to prevent duplicates.
+6. Click **Add to sheet**, review the row, then **Save changes**. A new row's
    **Setup / Stock setup** button lets you adjust these choices before saving.
 
 Saving creates the real Part and, when requested, **one native StockItem** with
@@ -89,6 +98,22 @@ nothing is reassigned or partially created. Use the existing stock record, or
 create the new part without opening stock. Structural locations cannot hold stock.
 The operation does not create a manufacturing build or BOM allocation.
 
+Photos upload through InvenTree's normal image endpoint after the part/stock/price
+transaction succeeds. Keep the sheet open on a slow connection. If an upload
+fails, **Save changes** retries the retained picture against the saved part ID;
+it does not create another part. Do not close the page until it finishes or you
+discard the pending picture. Photo upload requires part-change permission.
+
+## Delete a part
+
+Uncheck **Visible**, save, then use the row's **Delete** button and confirm the
+displayed part. Part-delete permission is required. InvenTree's native locked,
+assembly and protected-link checks still apply; the sheet also refuses deletion
+while any stock records exist. Remove or resolve those through native InvenTree.
+Deletion removes the part and its linked customer prices. It is not undoable.
+Deleted unnumbered-import links remain as tombstones so repeating that import
+does not recreate the deleted part.
+
 ## Part Pricing
 
 The **Part Pricing** strip is always visible. If pricing is unavailable it explains
@@ -99,7 +124,10 @@ Choose a customer and quantity break to show the customer-price column. A single
 available customer is selected automatically. Blank means no price at that exact
 tier. Edit a price and save; other customers and tiers remain unchanged. Existing
 currencies are preserved; inactive lists must be enabled in the full pricing tab.
-A new part and its customer price can be created in the same sheet save.
+A new part and its customer price can be created in the same sheet save directly
+from **Add part**. Quick customer creation requires company-add and Customer
+Pricing edit permissions, creates a native customer (not a supplier), and is
+protected against double clicks and lost-response retries.
 
 Each row's **Part Pricing** button shows current customer schedules and permitted
 material costs. **Edit in sheet** selects that customer/tier and focuses the price
@@ -157,17 +185,24 @@ previews expire after one day. The workbook is never modified.
 
 ## Numbering, permissions and integration
 
-Administrators can label/add series and advance counters under **Numbering**.
+Administrators can label/add series and optionally reserve earlier numbers under **Numbering**.
 Neutral initial series labels preserve the workbook's numbering without inventing
-business categories. The allocator checks all native IPNs plus retained counters;
-it never decreases a counter, recycles deleted numbers or rolls into another
-series on exhaustion. Special alphanumeric numbers remain valid.
+business categories. Existing parts are never renumbered. Deleting the most
+recent number moves that series' counter back by one, making that number the
+next available; this works from either the sheet or native InvenTree. Deleting
+an older number leaves its gap untouched. Special alphanumeric numbers remain
+valid, and exhaustion does not roll into another series. Explicit reservations
+prevent reuse below the selected floor.
+
+The 0.3.0 migration reconciles old counters against current native IPNs once;
+it changes no Part numbers. The deletion hook thereafter handles the latest
+number only, inside the same transaction as the native deletion.
 
 A shared database lock coordinates Parts Sheet writes, including SQLite.
 Keep InvenTree's **Allow duplicate IPN** setting disabled; external API writers do
 not take this plugin lock. Snapshot checks detect concurrent part/price changes.
 
-Part view/add/change permissions apply. Opening stock additionally requires stock
+Part view/add/change/delete permissions apply. Opening stock additionally requires stock
 add and location view access. Customer Pricing permissions apply independently,
 including when a saved request receipt is replayed.
 
@@ -189,10 +224,11 @@ ruff check src tests
 python -m build
 ```
 
-37 tests exercise the actual Customer Pricing 0.6.1 code against a minimal Django
+Tests exercise the actual Customer Pricing 0.6.1 code against a minimal Django
 host contract. The separate official InvenTree 1.3.5 container job checks native
 parts, stock, assigned barcode lookup/history, pricing synchronization, migrations
-and HTTP routes. Browser checks cover photos/row size, pagination, field mapping,
-pricing selection and a lost-response retry during combined part/stock/price
-creation. Test records are disposable. Private workbook/data are excluded from
+and HTTP routes, image upload, deletion and latest-number reuse. Browser checks
+cover the dashboard rendering contract, column controls, full-path location
+search, quick customer retries, combined creation and photo-only retries after
+part creation. Test records are disposable. Private workbook/data are excluded from
 Git and packages. AWS calls are mocked in tests; production publishing is not run.

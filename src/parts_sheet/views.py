@@ -12,7 +12,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import DatabaseError, transaction
-from django.db.models import Q
+from django.db.models import BooleanField, Case, F, OuterRef, Q, Subquery, Value, When
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.cache import never_cache
@@ -21,12 +21,13 @@ from django.views.decorators.http import require_GET
 from part.models import Part, PartCategory
 
 from . import __version__, pricing
+from .customers import can_add_customer, create_customer
 from .import_service import import_rows
 from .importer import classify, read_workbook
 from .models import ChangeRecord, ImportPreview, NumberSeries
-from .numbering import high_water, lock_series, snapshot
-from .services import edit_parts, require_part, serialize_part
-from .stock import can_add_stock
+from .numbering import catalogue_high_water, lock_series, snapshot
+from .services import delete_part, edit_parts, require_part, serialize_part
+from .stock import can_add_stock, can_view_locations, location_options
 
 
 @login_required
@@ -48,8 +49,8 @@ def asset(request, filename):
     )
 
 
-def filtered_parts(values):
-    parts = Part.objects.select_related("category", "sheet_details").all()
+def filtered_parts(values, user=None):
+    parts = Part.objects.select_related("category", "sheet_details", "default_location").all()
     query = str(values.get("q", "")).strip()[:200]
     if query:
         parts = parts.filter(
@@ -65,16 +66,66 @@ def filtered_parts(values):
         parts = parts.filter(active=values["active"] == "true")
     if values.get("prefix"):
         parts = parts.filter(IPN__startswith=str(values["prefix"])[:40])
+    columns = {
+        "IPN": "IPN",
+        "name": "name",
+        "description": "description",
+        "category": "category__pathstring",
+        "active": "active",
+        "make_model": "sheet_details__cells__make_model",
+        "material": "sheet_details__cells__material",
+        "size": "sheet_details__cells__size",
+        "default_location": "default_location__pathstring",
+        "pk": "pk",
+    }
+    for key in ("IPN", "name", "description", "make_model", "material", "size", "default_location"):
+        value = str(values.get(f"filter_{key}", "")).strip()[:200]
+        if value:
+            if key == "default_location" and not can_view_locations(user):
+                raise PermissionDenied("Stock location view permission is required.")
+            parts = parts.filter(**{columns[key] + "__icontains": value})
+    parts = parts.annotate(
+        has_photo=Case(
+            When(Q(image="") | Q(image__isnull=True), then=Value(False)),
+            default=Value(True),
+            output_field=BooleanField(),
+        )
+    )
+    columns["photo"] = "has_photo"
+    if values.get("photo") in ("true", "false"):
+        parts = parts.filter(has_photo=values["photo"] == "true")
     sort = values.get("sort", "IPN")
-    if sort not in ("IPN", "-IPN", "name", "-name", "-pk"):
-        sort = "IPN"
-    return parts.order_by(sort, "pk")
+    if sort.lstrip("-") == "default_location" and not can_view_locations(user):
+        raise PermissionDenied("Stock location view permission is required.")
+    if sort.lstrip("-") == "price" or values.get("price_min") or values.get("price_max"):
+        pricing.require(user)
+        from inventree_customer_pricing.models import CustomerPriceBreak
+
+        customer = int(values.get("customer") or 0)
+        quantity = Decimal(values.get("quantity") or "1")
+        if not customer or not quantity.is_finite() or quantity < 1:
+            raise ValidationError("Choose a customer and quantity break to filter or sort prices.")
+        tiers = CustomerPriceBreak.objects.filter(
+            price_list__part_id=OuterRef("pk"), price_list__customer_id=customer, quantity=quantity
+        ).order_by("pk")
+        parts = parts.annotate(sheet_price=Subquery(tiers.values("price")[:1]))
+        columns["price"] = "sheet_price"
+        for key, lookup in (("price_min", "gte"), ("price_max", "lte")):
+            if values.get(key):
+                price = Decimal(values[key])
+                if not price.is_finite() or price < 0:
+                    raise ValidationError("Enter a valid non-negative price filter.")
+                parts = parts.filter(**{f"sheet_price__{lookup}": price})
+    field = columns.get(sort.lstrip("-"), "IPN")
+    ordering = (
+        F(field).desc(nulls_last=True) if sort.startswith("-") else F(field).asc(nulls_last=True)
+    )
+    return parts.order_by(ordering, "pk")
 
 
 def bootstrap(user):
     from company.models import Company
     from plugin.registry import registry
-    from stock.models import StockLocation
     from users.permissions import check_user_permission
 
     from .website import configured
@@ -82,18 +133,15 @@ def bootstrap(user):
     caps = pricing.capabilities(user)
     return {
         "permissions": {
-            a: bool(check_user_permission(user, Part, a)) for a in ("view", "add", "change")
+            a: bool(check_user_permission(user, Part, a))
+            for a in ("view", "add", "change", "delete")
         },
         "admin": bool(user.is_staff or user.is_superuser),
         "pricing": caps,
         "stock_add": can_add_stock(user),
-        "locations": list(
-            StockLocation.objects.filter(structural=False)
-            .order_by("pathstring")
-            .values("id", "name", "pathstring")
-        )
-        if can_add_stock(user)
-        else [],
+        "customer_add": can_add_customer(user),
+        "location_view": can_view_locations(user),
+        "locations": location_options() if can_view_locations(user) else [],
         "website_sync": configured(),
         "series": [snapshot(s) for s in NumberSeries.objects.all()],
         "categories": [
@@ -115,7 +163,7 @@ def bootstrap(user):
 
 
 def export_csv(request):
-    rows = filtered_parts(request.GET)
+    rows = filtered_parts(request.GET, request.user)
     if rows.count() > 20000:
         raise ValidationError("Filter to 20,000 parts or fewer before exporting.")
     buffer = io.StringIO()
@@ -170,7 +218,7 @@ def api(request, action):
                 page_size = int(request.GET.get("page_size", 50))
                 if page_size not in (25, 50, 100, 200):
                     raise ValidationError("Choose 25, 50, 100 or 200 parts per page.")
-                page = Paginator(filtered_parts(request.GET), page_size).get_page(
+                page = Paginator(filtered_parts(request.GET, request.user), page_size).get_page(
                     request.GET.get("page", 1)
                 )
                 caps = pricing.capabilities(request.user)
@@ -233,6 +281,10 @@ def api(request, action):
                 raise ValidationError("Expected a JSON object.")
             if action == "save":
                 return JsonResponse(edit_parts(request.user, payload))
+            if action == "delete":
+                return JsonResponse(delete_part(request.user, payload))
+            if action == "customer":
+                return JsonResponse(create_customer(request.user, payload))
             if action == "import":
                 return JsonResponse(import_rows(request.user, payload))
             if action == "series":
@@ -254,7 +306,8 @@ def api(request, action):
                     number = str(payload.get("last") or prefix + "0" * digits)
                     if not re.fullmatch(re.escape(prefix) + rf"[0-9]{{{digits}}}", number):
                         raise ValidationError("Last number must include the prefix and all digits.")
-                    series.last_value = max(high_water(series), int(number[len(prefix) :]))
+                    series.reserved_through = int(number[len(prefix) :])
+                    series.last_value = catalogue_high_water(series)
                     series.full_clean()
                     series.save()
                     ChangeRecord.objects.create(

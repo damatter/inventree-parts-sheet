@@ -42,14 +42,14 @@ def test_allocation_scans_native_and_does_not_follow_other_formats(user):
     assert result["url"] == f"/web/part/{result['id']}/"
 
 
-def test_retries_create_once_and_preserve_last_number_after_delete(user):
+def test_retries_create_once_and_reclaim_latest_number_after_native_delete(user):
     p = payload([new()])
     first = edit_parts(user, p)
     assert edit_parts(user, p) == first
     part = Part.objects.get(pk=first["rows"][0]["id"])
     number = int(part.IPN)
     part.delete()
-    assert int(edit_parts(user, payload([new()]))["rows"][0]["ipn"]) == number + 1
+    assert int(edit_parts(user, payload([new()]))["rows"][0]["ipn"]) == number
 
 
 def test_atomic_validation_rolls_back_entire_batch_and_counter(user):
@@ -67,7 +67,7 @@ def test_special_numbers_preserved_and_duplicate_rejected(user):
 
 
 def test_exhausted_series_stops(user):
-    NumberSeries.objects.filter(prefix="1008").update(last_value=999)
+    NumberSeries.objects.filter(prefix="1008").update(reserved_through=999)
     with pytest.raises(ValidationError, match="full"):
         edit_parts(user, payload([new()]))
 

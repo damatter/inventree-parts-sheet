@@ -22,33 +22,9 @@
         </div>
       </header>
       <section class="toolbar">
-        <label class="search"
-          >Find a part<input
-            id="search"
-            type="search"
-            placeholder="Part number, name or description"
-        /></label>
-        <label
-          >Category<select id="category">
-            <option value="">All categories</option>
-          </select></label
-        >
-        <label
-          >Visibility<select id="active">
-            <option value="">All parts</option>
-            <option value="true">Visible</option>
-            <option value="false">Hidden</option>
-          </select></label
-        >
-        <label
-          >Sort<select id="sort">
-            <option value="IPN">DiCor number ↑</option>
-            <option value="-IPN">DiCor number ↓</option>
-            <option value="name">OEM PN A–Z</option>
-            <option value="-pk">Newest first</option>
-          </select></label
-        >
         <button id="reload">Refresh</button>
+        <button id="clearfilters">Clear column filters</button>
+        <span class="hint">Filter below each heading. Click a heading to sort ↑ or ↓.</span>
       </section>
       <section class="pricebar" id="pricebar">
         <strong>Part Pricing</strong>
@@ -73,6 +49,7 @@
           /></label>
         </div>
         <span id="pricingmessage"></span>
+        <button id="addcustomer" type="button">＋ New customer</button>
       </section>
       <section class="actions">
         <button id="add" class="primary">＋ Add part</button
@@ -95,17 +72,18 @@
         <table id="sheet">
           <thead>
             <tr>
-              <th class="number">DiCor Part Number</th>
-              <th class="photo">Photo</th>
-              <th class="name">OEM PN</th>
-              <th>Part description</th>
-              <th>Visible</th>
-              <th>Category</th>
-              <th>Make / model</th>
-              <th>Material spec</th>
-              <th>Size / ratio / teeth</th>
-              <th class="pricecol" hidden>Customer price</th>
-              <th>Part Pricing / Details</th>
+              <th class="number" data-column="IPN">DiCor Part Number</th>
+              <th class="photo" data-column="photo">Photo</th>
+              <th class="name" data-column="name">OEM PN</th>
+              <th data-column="description">Part description</th>
+              <th data-column="active">Visible</th>
+              <th data-column="category">Category</th>
+              <th data-column="make_model">Make / model</th>
+              <th data-column="material">Material spec</th>
+              <th data-column="size">Size / ratio / teeth</th>
+              <th data-column="default_location">Default stock location</th>
+              <th class="pricecol" data-column="price" hidden>Customer price</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -153,6 +131,12 @@
           ><input id="newvisible" type="checkbox" /> Visible in the
           catalogue</label
         >
+        <div class="fields">
+          <div><label>Default stock location</label><div id="newlocationpicker"></div></div>
+          <label>Picture (optional)<input id="newphoto" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
+            <span id="newphotoname" class="hint"></span>
+          </label>
+        </div>
         <fieldset>
           <legend>Opening stock (optional)</legend>
           <label
@@ -167,11 +151,21 @@
                 min="0.00001"
                 step="0.00001"
                 inputmode="decimal" /></label
-            ><label>Location<select id="newlocation"></select></label>
+            >
+            <p class="hint">Stored at the default stock location selected above.</p>
           </div>
           <p id="stockhint" class="hint">
             The stock item’s barcode will be the OEM part number.
           </p>
+        </fieldset>
+        <fieldset id="newpricing">
+          <legend>Customer pricing (optional)</legend>
+          <div class="fields">
+            <label>Customer<select id="newpricecustomer"></select></label>
+            <label>Unit price<input id="newprice" type="number" min="0" step="any" placeholder="Leave blank for no price" /><span id="newpricecurrency">CAD · quantity 1</span></label>
+          </div>
+          <button id="newpartcustomer" type="button">＋ New customer</button>
+          <p class="hint">Saved to the Customer Pricing plugin with the new part.</p>
         </fieldset>
         <details class="manualnumber">
           <summary>Use a specific internal number instead</summary>
@@ -189,12 +183,37 @@
         <button class="primary" type="submit">Add to sheet</button>
       </form>
     </dialog>
+    <dialog id="customerdialog">
+      <form method="dialog" class="dialoghead"><h2>New customer</h2><button aria-label="Close">×</button></form>
+      <form id="customerform">
+        <label>Customer name<input id="customername" required maxlength="100" autocomplete="organization" /></label>
+        <label>Currency<input id="customercurrency" value="CAD" required maxlength="3" minlength="3" /></label>
+        <p id="customermessage" role="status"></p>
+        <button id="savecustomer" type="submit" class="primary">Create customer</button>
+      </form>
+    </dialog>
     <dialog id="picture">
       <form method="dialog" class="dialoghead">
         <h2 id="picturetitle">Part picture</h2>
         <button aria-label="Close">×</button>
       </form>
       <img id="fullpicture" alt="" />
+      <label id="pictureuploadlabel">Choose a picture<input id="pictureupload" type="file" accept="image/jpeg,image/png,image/webp,image/gif" /></label>
+      <p class="hint">Picture changes are included when you save the sheet. Slow uploads may take several minutes.</p>
+    </dialog>
+    <dialog id="locationdialog">
+      <form method="dialog" class="dialoghead"><h2>Choose stock location</h2><button aria-label="Close">×</button></form>
+      <label>Find aisle, shelf or bin<input id="locationsearch" type="search" placeholder="Type any part of the location path" autocomplete="off" /></label>
+      <p id="locationcount" class="hint"></p>
+      <div id="locationresults"></div>
+      <button id="clearlocation" type="button">No default location</button>
+    </dialog>
+    <dialog id="deletedialog">
+      <form method="dialog" class="dialoghead"><h2>Delete part</h2><button aria-label="Close">×</button></form>
+      <p id="deleteprompt"></p>
+      <p>This permanently removes the part and its prices. Parts with stock records or protected links cannot be deleted here.</p>
+      <p id="deletemessage" role="status"></p>
+      <button id="confirmdelete" class="danger">Delete part permanently</button>
     </dialog>
     <dialog id="pricingdialog">
       <form method="dialog" class="dialoghead">
@@ -259,8 +278,9 @@
       </form>
       <div id="serieslist"></div>
       <p>
-        The last number never moves backwards. Numbers already in the catalogue
-        are checked automatically.
+        Existing part numbers never change. Deleting the most recent number
+        makes that number available again. Deleting an older number leaves a gap.
+        Optional reservations keep earlier numbers unavailable.
       </p>
       <form id="seriesform">
         <label
@@ -283,7 +303,7 @@
             value="3"
             required /></label
         ><label
-          >Last full number used<input
+          >Reserve numbers through (full number)<input
             name="last"
             required
             placeholder="1008272" /></label

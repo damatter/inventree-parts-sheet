@@ -6,13 +6,19 @@ import uuid
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from part.models import Part
 from users.permissions import check_user_permission
 
 from . import pricing
 from .models import ChangeRecord, Operation, SheetDetails
 from .numbering import allocate, lock_series, observe
-from .stock import create_opening_stock, require_stock
+from .stock import (
+    can_view_locations,
+    create_opening_stock,
+    require_stock,
+    validate_default_location,
+)
 
 FIELDS = (
     "name",
@@ -23,6 +29,7 @@ FIELDS = (
     "component",
     "purchaseable",
     "salable",
+    "default_location_id",
 )
 CELL_FIELDS = (
     "required",
@@ -76,6 +83,11 @@ def serialize_part(part, user):
         "category": str(part.category) if part.category_id else "Uncategorised",
         "thumbnail": part.get_thumbnail_url() if part.image else "",
         "image": part.get_image_url() if part.image else "",
+        "default_location": (
+            part.default_location.pathstring or part.default_location.name
+            if part.default_location_id and can_view_locations(user)
+            else ""
+        ),
     }
 
 
@@ -160,6 +172,8 @@ def edit_parts(user, payload):
             if set(cells) - set(CELL_FIELDS):
                 raise ValidationError("That supplemental cell cannot be edited here.")
             for field, value in part_changes.items():
+                if field == "default_location_id":
+                    validate_default_location(user, value)
                 if (
                     field in ("active", "assembly", "component", "purchaseable", "salable")
                     and type(value) is not bool
@@ -223,3 +237,35 @@ def edit_parts(user, payload):
             row["cells"].pop("sell_cad", None)
             row.pop("price", None)
     return result
+
+
+def delete_part(user, payload):
+    require_part(user, "view")
+    require_part(user, "delete")
+
+    def remove(series):
+        from stock.models import StockItem
+
+        part = Part.objects.select_for_update().get(pk=payload.get("id"))
+        before = part_state(part)
+        if payload.get("token") != digest(before):
+            raise ValidationError("This part changed elsewhere. Refresh before deleting it.")
+        if part.active:
+            raise ValidationError("Uncheck Visible and save the part before deleting it.")
+        if StockItem.objects.filter(part=part).exists():
+            raise ValidationError("This part has stock records. Manage those in InvenTree first.")
+        part_id = part.pk
+        try:
+            # Native checks (locked part, assembly usage, protected relations)
+            # remain authoritative; never bypass the model with bulk deletion.
+            part.delete()
+        except ProtectedError as exc:
+            raise ValidationError(
+                "Other records still use this part. Open it in InvenTree to review them."
+            ) from exc
+        ChangeRecord.objects.create(
+            user=user, action="delete", details={"part": part_id, "before": before}
+        )
+        return {"deleted": part_id}
+
+    return idempotent(user, payload.get("key"), payload, remove)

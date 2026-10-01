@@ -6,3 +6,4 @@ class Company(models.Model):
     currency = models.CharField(max_length=3, default="CAD")
     active = models.BooleanField(default=True)
     is_customer = models.BooleanField(default=True)
+    is_supplier = models.BooleanField(default=False)
